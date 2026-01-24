@@ -1,0 +1,40 @@
+/* src/index.css */
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  
+  /* Paleta de Alto Contraste */
+  --bg-color: #eef2f6;       /* Fundo da tela (cinza azulado leve) */
+  --card-bg: #ffffff;        /* Fundo dos cartões (branco puro) */
+  --text-primary: #1a1a1a;   /* Texto principal (quase preto) */
+  --text-secondary: #4a4a4a; /* Texto secundário (cinza escuro, nada de cinza claro!) */
+  --primary-color: #2563eb;  /* Azul forte */
+  --danger-color: #dc2626;   /* Vermelho erro */
+  --success-bg: #dcfce7;     /* Fundo verde claro */
+  --success-text: #14532d;   /* Texto verde escuro (legível) */
+  --purple-bg: #f3e8ff;      /* Fundo roxo claro */
+  --purple-text: #581c87;    /* Texto roxo escuro */
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  color: var(--text-primary); /* Garante que títulos sejam escuros */
+  font-weight: 700;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Garante que inputs e selects tenham borda visível */
+input, select {
+  border: 1px solid #999;
+  color: #000;
+  background: #fff;
+}
