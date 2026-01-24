@@ -61,6 +61,8 @@ export default function NovoAgendamento() {
     // Se for MENSALISTA, salva 0.00. Se for AVULSO, salva o preço do serviço.
     const precoFinal = isMensalista ? 0 : precoPreview
 
+    const { data: { user } } = await supabase.auth.getUser()
+
     const { error } = await supabase
       .from('appointments')
       .insert({
@@ -68,7 +70,8 @@ export default function NovoAgendamento() {
         service_id: selectedServicoId,
         start_time: new Date(dataHora).toISOString(),
         agreed_price: precoFinal,
-        status: 'AGENDADO'
+        status: 'AGENDADO',
+        user_id: user.id
       })
 
     if (error) {

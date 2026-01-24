@@ -33,8 +33,11 @@ export default function Servicos() {
     
     if (!novoNome || !novoPreco) return alert("Preencha nome e preço!")
 
+    const { data: { user } } = await supabase.auth.getUser()
+
     const novoServico = {
       name: novoNome,
+      user_id: user.id,
       default_price: parseFloat(novoPreco.replace(',', '.')) // Garante que 25,00 vire 25.00
     }
 

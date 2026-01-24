@@ -135,12 +135,15 @@ export default function Financeiro() {
     e.preventDefault()
     if (!desc || !valor) return alert('Preencha descrição e valor!')
 
+    const { data: { user } } = await supabase.auth.getUser()
+
     const { error } = await supabase.from('transactions').insert({
       description: desc,
       amount: parseFloat(valor.replace(',', '.')),
       type: tipoLancamento === 'RECEITA_MENSAL' ? 'RECEITA' : 'DESPESA',
       date: dataLancamento ? new Date(dataLancamento).toISOString() : new Date().toISOString(),
-      client_id: clientIdVinculado
+      client_id: clientIdVinculado,
+      user_id: user.id
     })
 
     if (!error) {

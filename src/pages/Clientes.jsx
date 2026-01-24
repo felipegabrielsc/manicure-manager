@@ -5,6 +5,7 @@ import { ArrowLeft, Save, Trash2, X, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 
+
 export default function Clientes() {
   const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
@@ -25,6 +26,8 @@ export default function Clientes() {
   const [clienteDetalhe, setClienteDetalhe] = useState(null)
   const [historicoCliente, setHistoricoCliente] = useState([])
   const [modalDetalheOpen, setModalDetalheOpen] = useState(false)
+
+  
 
   useEffect(() => {
     fetchClientes()
@@ -91,10 +94,13 @@ export default function Clientes() {
     const nomePadronizado = formatarNome(novoNome)
     const valorPadronizado = valorMensal ? parseFloat(valorMensal.replace(',', '.')) : null
 
+    const { data: { user } } = await supabase.auth.getUser()
+
     const novoCliente = {
       name: nomePadronizado,
       phone: novoTelefone,
       type: tipoCliente,
+      user_id: user.id,
       monthly_fee: tipoCliente === 'MENSALISTA' ? valorPadronizado : null,
       monthly_due_day: tipoCliente === 'MENSALISTA' ? parseInt(diaVencimento) : null
     }
