@@ -46,7 +46,15 @@ export default function Agenda() {
     setLoading(false)
   }
 
-  // --- FUNÇÃO DE LOGOUT (SAIR) ---
+  // --- FUNÇÃO DE SUPORTE (NOVO) ---
+  const abrirSuporte = () => {
+    // COLOQUE SEU NÚMERO AQUI (com DDD 55)
+    const seuNumero = "5516996097901" 
+    const msg = "Oi Felipe, preciso de ajuda com o App da Manicure."
+    window.open(`https://wa.me/${seuNumero}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
+  // --- FUNÇÃO DE LOGOUT ---
   const handleLogout = async () => {
     setAcaoConfirmacao(() => async () => {
       await supabase.auth.signOut()
@@ -149,7 +157,7 @@ export default function Agenda() {
         </div>
       )}
 
-      {/* --- CABEÇALHO (Layout Novo em 2 Linhas) --- */}
+      {/* CABEÇALHO MOBILE (2 LINHAS) */}
       <div 
         className="header-safe-area" 
         style={{ 
@@ -164,7 +172,7 @@ export default function Agenda() {
           gap: '10px' 
         }}
       >
-        {/* LINHA 1: Ferramentas */}
+        {/* LINHA 1 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', gap: '15px' }}>
             <Link to="/clientes" style={btnNavStyle}><User size={22} color="#000" /></Link>
@@ -175,7 +183,7 @@ export default function Agenda() {
           </Link>
         </div>
 
-        {/* LINHA 2: Data */}
+        {/* LINHA 2 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
           <button onClick={() => mudarDia(-1)} style={{...btnNavStyle, width: '40px', height: '40px'}}><ChevronLeft size={24} color="#000" /></button>
           <div style={{ textAlign: 'center', minWidth: '160px' }}>
@@ -202,6 +210,17 @@ export default function Agenda() {
             ))}
           </div>
         )}
+
+        {/* --- RODAPÉ DE SUPORTE (NOVO) --- */}
+        <div style={{textAlign: 'center', marginTop: '40px', marginBottom: '80px', color: '#999', fontSize: '12px'}}>
+          <p style={{margin: '5px 0'}}>Desenvolvido por Felipe Gabriel Sgobi</p>
+          <button 
+            onClick={abrirSuporte}
+            style={{background: 'none', border: 'none', color: '#2563eb', textDecoration: 'underline', cursor: 'pointer', fontSize: '12px', padding: '10px'}}
+          >
+            Precisa de ajuda? Clique aqui e Fale comigo.
+          </button>
+        </div>
       </div>
 
       {/* BOTÃO FLUTUANTE DE LOGOUT (ESQUERDA) */}
@@ -209,7 +228,7 @@ export default function Agenda() {
         onClick={handleLogout}
         className="fab-safe-area"
         style={{ 
-          position: 'fixed', left: '25px', bottom: 'unset', // 'unset' pois o CSS controla
+          position: 'fixed', left: '25px', bottom: 'unset', 
           width: '50px', height: '50px', borderRadius: '50%', 
           background: '#fee2e2', color: '#dc2626', border: '2px solid #dc2626',
           display: 'flex', alignItems: 'center', justifyContent: 'center', 
@@ -221,7 +240,7 @@ export default function Agenda() {
 
       {/* BOTÃO FLUTUANTE NOVO AGENDAMENTO (DIREITA) */}
       <Link to="/novo" className="fab-safe-area" style={{ 
-        position: 'fixed', right: '25px', bottom: 'unset', // 'unset' pois o CSS controla
+        position: 'fixed', right: '25px', bottom: 'unset', 
         width: '64px', height: '64px', borderRadius: '50%', 
         background: '#2563eb', color: 'white', 
         display: 'flex', alignItems: 'center', justifyContent: 'center', 
