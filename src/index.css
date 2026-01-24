@@ -1,40 +1,41 @@
-/* src/index.css */
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --bg-color: #f0f2f5;
+  --max-width: 600px; /* Limite para tablets */
   
-  /* Paleta de Alto Contraste */
-  --bg-color: #eef2f6;       /* Fundo da tela (cinza azulado leve) */
-  --card-bg: #ffffff;        /* Fundo dos cartões (branco puro) */
-  --text-primary: #1a1a1a;   /* Texto principal (quase preto) */
-  --text-secondary: #4a4a4a; /* Texto secundário (cinza escuro, nada de cinza claro!) */
-  --primary-color: #2563eb;  /* Azul forte */
-  --danger-color: #dc2626;   /* Vermelho erro */
-  --success-bg: #dcfce7;     /* Fundo verde claro */
-  --success-text: #14532d;   /* Texto verde escuro (legível) */
-  --purple-bg: #f3e8ff;      /* Fundo roxo claro */
-  --purple-text: #581c87;    /* Texto roxo escuro */
+  /* Variáveis de Área Segura (Notch do iPhone) */
+  --sat: env(safe-area-inset-top);
+  --sab: env(safe-area-inset-bottom);
 }
 
 body {
   margin: 0;
   padding: 0;
   background-color: var(--bg-color);
-  color: var(--text-primary);
-  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent; /* Remove piscar azul */
+  overscroll-behavior-y: none; /* Remove efeito elástico da página */
 }
 
-h1, h2, h3 {
-  color: var(--text-primary); /* Garante que títulos sejam escuros */
-  font-weight: 700;
+#root {
+  max-width: var(--max-width);
+  margin: 0 auto; /* Centraliza no tablet/PC */
+  min-height: 100vh;
+  background-color: #fff;
+  position: relative;
+  box-shadow: 0 0 20px rgba(0,0,0,0.05);
 }
 
-button {
-  cursor: pointer;
+/* Evita zoom ao digitar no celular */
+input, select, textarea, button {
+  font-size: 16px; 
+  outline: none;
 }
 
-/* Garante que inputs e selects tenham borda visível */
-input, select {
-  border: 1px solid #999;
-  color: #000;
-  background: #fff;
+/* Classes para respeitar o furo da câmera e a barra de baixo */
+.header-safe-area {
+  padding-top: calc(15px + var(--sat)) !important;
+}
+
+.fab-safe-area {
+  bottom: calc(25px + var(--sab)) !important;
 }

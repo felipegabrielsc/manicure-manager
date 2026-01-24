@@ -1,9 +1,9 @@
 // src/pages/Agenda.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ChevronLeft, ChevronRight, Calendar, User, Plus, Scissors, DollarSign, CheckSquare, Square, MessageCircle, Trash2, Clock, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, User, Plus, Scissors, DollarSign, CheckSquare, Square, MessageCircle, Trash2, Clock, X, LogOut } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Modal from '../components/Modal' // Reutilizando nosso modal genérico para alertas
+import Modal from '../components/Modal' 
 
 export default function Agenda() {
   const [dataAtual, setDataAtual] = useState(new Date())
@@ -15,7 +15,7 @@ export default function Agenda() {
   const [agendamentoSelecionado, setAgendamentoSelecionado] = useState(null)
   const [novaDataHora, setNovaDataHora] = useState('')
 
-  // ESTADOS DO MODAL GENÉRICO (Confirmação)
+  // ESTADOS DO MODAL GENÉRICO
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
   const [acaoConfirmacao, setAcaoConfirmacao] = useState(null)
 
@@ -46,15 +46,24 @@ export default function Agenda() {
     setLoading(false)
   }
 
-  // --- AÇÕES DO USUÁRIO ---
+  // --- FUNÇÃO DE LOGOUT (SAIR) ---
+  const handleLogout = async () => {
+    setAcaoConfirmacao(() => async () => {
+      await supabase.auth.signOut()
+      window.location.reload() 
+    })
+    setAlertModal({
+      isOpen: true, type: 'confirm', title: 'Sair do Sistema?',
+      message: 'Você terá que fazer login novamente para acessar.'
+    })
+  }
 
+  // --- AÇÕES DO USUÁRIO ---
   const abrirOpcoes = (agendamento) => {
     setAgendamentoSelecionado(agendamento)
-    // Prepara a data atual do agendamento para o input (formatando para datetime-local)
     const dataLocal = new Date(agendamento.start_time)
     dataLocal.setMinutes(dataLocal.getMinutes() - dataLocal.getTimezoneOffset())
     setNovaDataHora(dataLocal.toISOString().slice(0, 16))
-    
     setEditModalOpen(true)
   }
 
@@ -63,13 +72,10 @@ export default function Agenda() {
     setAgendamentoSelecionado(null)
   }
 
-  // 1. CONFIRMAR EXCLUSÃO
   const pedirConfirmacaoExclusao = () => {
-    setAcaoConfirmacao(() => deletarAgendamento) // Guarda a função
+    setAcaoConfirmacao(() => deletarAgendamento)
     setAlertModal({
-      isOpen: true,
-      type: 'confirm',
-      title: 'Cancelar Agendamento?',
+      isOpen: true, type: 'confirm', title: 'Cancelar Agendamento?',
       message: 'Tem certeza? Se o serviço já foi pago, ele sairá do financeiro.'
     })
   }
@@ -77,33 +83,21 @@ export default function Agenda() {
   const deletarAgendamento = async () => {
     if (!agendamentoSelecionado) return
     const { error } = await supabase.from('appointments').delete().eq('id', agendamentoSelecionado.id)
-    
     if (!error) {
       buscarAgendamentos()
       fecharOpcoes()
-      setAlertModal({ isOpen: false }) // Fecha o alerta
+      setAlertModal({ isOpen: false })
     } else {
       alert('Erro ao deletar')
     }
   }
 
-  // 2. SALVAR NOVA DATA
   const salvarNovaData = async () => {
     if (!agendamentoSelecionado || !novaDataHora) return
-
-    const { error } = await supabase
-      .from('appointments')
-      .update({ start_time: new Date(novaDataHora).toISOString() })
-      .eq('id', agendamentoSelecionado.id)
-
+    const { error } = await supabase.from('appointments').update({ start_time: new Date(novaDataHora).toISOString() }).eq('id', agendamentoSelecionado.id)
     if (!error) {
       buscarAgendamentos()
       fecharOpcoes()
-      // Se mudou para outro dia, talvez suma da tela atual, então avisamos
-      const novaDateObj = new Date(novaDataHora)
-      if (novaDateObj.getDate() !== dataAtual.getDate()) {
-        alert(`Agendamento movido para dia ${novaDateObj.toLocaleDateString()}`)
-      }
     } else {
       alert('Erro ao remarcar')
     }
@@ -118,30 +112,17 @@ export default function Agenda() {
   }
 
   const mudarDia = (dias) => {
-    const novaData = new Date(dataAtual)
-    novaData.setDate(novaData.getDate() + dias)
-    setDataAtual(novaData)
+    const novaData = new Date(dataAtual); novaData.setDate(novaData.getDate() + dias); setDataAtual(novaData)
   }
 
-  // Handler para o Modal Genérico
-  const handleModalConfirm = () => {
-    if (acaoConfirmacao) acaoConfirmacao()
-  }
+  const handleModalConfirm = () => { if (acaoConfirmacao) acaoConfirmacao() }
 
   return (
     <div style={{ paddingBottom: '100px' }}>
       
-      {/* MODAL GENÉRICO (Alertas e Confirmações) */}
-      <Modal 
-        isOpen={alertModal.isOpen}
-        onClose={() => setAlertModal({...alertModal, isOpen: false})}
-        type={alertModal.type}
-        title={alertModal.title}
-        message={alertModal.message}
-        onConfirm={handleModalConfirm}
-      />
+      <Modal isOpen={alertModal.isOpen} onClose={() => setAlertModal({...alertModal, isOpen: false})} type={alertModal.type} title={alertModal.title} message={alertModal.message} onConfirm={handleModalConfirm} />
 
-      {/* MODAL DE EDIÇÃO (ESPECÍFICO DESSA TELA) */}
+      {/* MODAL DE EDIÇÃO */}
       {editModalOpen && agendamentoSelecionado && (
         <div style={overlayStyle} onClick={(e) => { if(e.target === e.currentTarget) fecharOpcoes() }}>
           <div style={modalBoxStyle}>
@@ -149,32 +130,18 @@ export default function Agenda() {
               <h3 style={{margin:0, color:'#000'}}>Gerenciar Agendamento</h3>
               <button onClick={fecharOpcoes} style={{background:'none', border:'none', cursor:'pointer'}}><X size={24} /></button>
             </div>
-
             <div style={{marginBottom:'20px'}}>
               <p style={{margin:0, fontSize:'14px', color:'#666'}}>Cliente</p>
               <strong style={{fontSize:'18px', color:'#000'}}>{agendamentoSelecionado.clients?.name}</strong>
               <p style={{margin:'5px 0 0 0', fontSize:'14px', color:'#666'}}>{agendamentoSelecionado.services?.name}</p>
             </div>
-
-            {/* REMARCAR */}
             <div style={{background:'#eff6ff', padding:'15px', borderRadius:'8px', marginBottom:'15px'}}>
               <label style={{display:'flex', alignItems:'center', gap:'5px', fontWeight:'bold', color:'#1e40af', marginBottom:'10px'}}>
                 <Clock size={18} /> Remarcar para:
               </label>
-              <div style={{display:'flex', gap:'10px'}}>
-                <input 
-                  type="datetime-local" 
-                  value={novaDataHora} 
-                  onChange={e => setNovaDataHora(e.target.value)}
-                  style={{...inputStyle, flex:1}}
-                />
-              </div>
-              <button onClick={salvarNovaData} style={{...btnFull, background:'#2563eb', marginTop:'10px'}}>
-                Salvar Nova Data
-              </button>
+              <input type="datetime-local" value={novaDataHora} onChange={e => setNovaDataHora(e.target.value)} style={{...inputStyle, width:'100%'}} />
+              <button onClick={salvarNovaData} style={{...btnFull, background:'#2563eb', marginTop:'10px'}}>Salvar Nova Data</button>
             </div>
-
-            {/* EXCLUIR */}
             <button onClick={pedirConfirmacaoExclusao} style={{...btnFull, background:'#fff', border:'1px solid #dc2626', color:'#dc2626'}}>
               <Trash2 size={18} style={{marginRight:'8px'}} /> Cancelar/Excluir
             </button>
@@ -182,21 +149,40 @@ export default function Agenda() {
         </div>
       )}
 
-      {/* CABEÇALHO */}
-      <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <Link to="/clientes" style={btnNavStyle}><User size={24} color="#000" /></Link>
-          <Link to="/servicos" style={btnNavStyle}><Scissors size={24} color="#000" /></Link>
+      {/* --- CABEÇALHO (Layout Novo em 2 Linhas) --- */}
+      <div 
+        className="header-safe-area" 
+        style={{ 
+          background: 'white', 
+          padding: '10px 20px 15px 20px',
+          position: 'sticky', 
+          top: 0, 
+          zIndex: 10, 
+          boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
+          display: 'flex',
+          flexDirection: 'column', 
+          gap: '10px' 
+        }}
+      >
+        {/* LINHA 1: Ferramentas */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: '15px' }}>
+            <Link to="/clientes" style={btnNavStyle}><User size={22} color="#000" /></Link>
+            <Link to="/servicos" style={btnNavStyle}><Scissors size={22} color="#000" /></Link>
+          </div>
+          <Link to="/financeiro" style={{...btnNavStyle, borderColor: '#16a34a', color: '#16a34a', background: '#f0fdf4'}}>
+            <DollarSign size={22} />
+          </Link>
         </div>
-        <div style={{ textAlign: 'center' }}>
-          <span style={{ display: 'block', fontSize: '12px', color: '#444', fontWeight: 'bold', textTransform: 'uppercase' }}>Visualizando</span>
-          <h2 style={{ margin: 0, fontSize: '16px', color: '#000', textTransform: 'capitalize' }}>{dataFormatada}</h2>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Link to="/financeiro" style={{...btnNavStyle, borderColor: '#16a34a', color: '#16a34a'}}><DollarSign size={24} /></Link>
-          <div style={{width: '1px', height: '25px', background: '#ccc', margin: '0 2px'}}></div>
-          <button onClick={() => mudarDia(-1)} style={btnNavStyle}><ChevronLeft size={24} color="#000" /></button>
-          <button onClick={() => mudarDia(1)} style={btnNavStyle}><ChevronRight size={24} color="#000" /></button>
+
+        {/* LINHA 2: Data */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+          <button onClick={() => mudarDia(-1)} style={{...btnNavStyle, width: '40px', height: '40px'}}><ChevronLeft size={24} color="#000" /></button>
+          <div style={{ textAlign: 'center', minWidth: '160px' }}>
+            <span style={{ display: 'block', fontSize: '11px', color: '#666', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>VISUALIZANDO</span>
+            <h2 style={{ margin: 0, fontSize: '18px', color: '#000', textTransform: 'capitalize', lineHeight: '1.2' }}>{dataFormatada}</h2>
+          </div>
+          <button onClick={() => mudarDia(1)} style={{...btnNavStyle, width: '40px', height: '40px'}}><ChevronRight size={24} color="#000" /></button>
         </div>
       </div>
 
@@ -212,18 +198,35 @@ export default function Agenda() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {agendamentos.map(item => (
-              <CardAgendamento 
-                key={item.id} 
-                agendamento={item} 
-                onToggle={() => toggleStatus(item.id, item.status)}
-                onOpenOptions={() => abrirOpcoes(item)} 
-              />
+              <CardAgendamento key={item.id} agendamento={item} onToggle={() => toggleStatus(item.id, item.status)} onOpenOptions={() => abrirOpcoes(item)} />
             ))}
           </div>
         )}
       </div>
 
-      <Link to="/novo" style={{ position: 'fixed', bottom: '25px', right: '25px', width: '64px', height: '64px', borderRadius: '50%', background: '#2563eb', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 20 }}>
+      {/* BOTÃO FLUTUANTE DE LOGOUT (ESQUERDA) */}
+      <button 
+        onClick={handleLogout}
+        className="fab-safe-area"
+        style={{ 
+          position: 'fixed', left: '25px', bottom: 'unset', // 'unset' pois o CSS controla
+          width: '50px', height: '50px', borderRadius: '50%', 
+          background: '#fee2e2', color: '#dc2626', border: '2px solid #dc2626',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 20, cursor: 'pointer' 
+        }}
+      >
+        <LogOut size={24} />
+      </button>
+
+      {/* BOTÃO FLUTUANTE NOVO AGENDAMENTO (DIREITA) */}
+      <Link to="/novo" className="fab-safe-area" style={{ 
+        position: 'fixed', right: '25px', bottom: 'unset', // 'unset' pois o CSS controla
+        width: '64px', height: '64px', borderRadius: '50%', 
+        background: '#2563eb', color: 'white', 
+        display: 'flex', alignItems: 'center', justifyContent: 'center', 
+        boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 20 
+      }}>
         <Plus size={32} strokeWidth={3} />
       </Link>
     </div>
@@ -255,51 +258,15 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions }) {
   }
 
   return (
-    <div 
-      onClick={onOpenOptions} // CLIQUE NO CARD ABRE OPÇÕES
-      style={{ 
-        background: 'white', borderRadius: '8px', padding: '15px', 
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #999',
-        borderLeft: `8px solid ${bordaLateral}`, display: 'flex', alignItems: 'center',
-        opacity: opacity, transition: 'all 0.3s ease', position: 'relative', cursor: 'pointer'
-      }}
-    >
-      
-      {/* Checkbox (PRECISA DE STOP PROPAGATION PARA NÃO ABRIR O MODAL) */}
-      <div 
-        onClick={(e) => { e.stopPropagation(); onToggle(); }} 
-        style={{ cursor: 'pointer', marginRight: '15px', padding: '5px' }}
-      >
-        {iconCheck}
-      </div>
-
-      <div style={{ paddingRight: '15px', borderRight: '2px solid #eee', marginRight: '15px', minWidth: '60px', textAlign: 'center' }}>
-        <span style={{ fontSize: '22px', fontWeight: 'bold', color: '#000' }}>{hora}</span>
-      </div>
-
+    <div onClick={onOpenOptions} style={{ background: 'white', borderRadius: '8px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #999', borderLeft: `8px solid ${bordaLateral}`, display: 'flex', alignItems: 'center', opacity: opacity, transition: 'all 0.3s ease', position: 'relative', cursor: 'pointer' }}>
+      <div onClick={(e) => { e.stopPropagation(); onToggle(); }} style={{ cursor: 'pointer', marginRight: '15px', padding: '5px' }}>{iconCheck}</div>
+      <div style={{ paddingRight: '15px', borderRight: '2px solid #eee', marginRight: '15px', minWidth: '60px', textAlign: 'center' }}><span style={{ fontSize: '22px', fontWeight: 'bold', color: '#000' }}>{hora}</span></div>
       <div style={{ flex: 1 }}>
-        <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', color: '#000', textDecoration: isConcluido ? 'line-through' : 'none' }}>
-          {agendamento.clients?.name}
-        </h3>
+        <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', color: '#000', textDecoration: isConcluido ? 'line-through' : 'none' }}>{agendamento.clients?.name}</h3>
         <p style={{ margin: 0, color: '#333', fontSize: '16px' }}>{agendamento.services?.name}</p>
-        
-        <div style={{ marginTop: '10px', display: 'inline-block', background: tagBg, color: tagColor, padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', border: `1px solid ${bordaLateral}` }}>
-          {isMensalista ? 'PACOTE MENSAL' : `R$ ${agendamento.agreed_price}`}
-        </div>
+        <div style={{ marginTop: '10px', display: 'inline-block', background: tagBg, color: tagColor, padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', border: `1px solid ${bordaLateral}` }}>{isMensalista ? 'PACOTE MENSAL' : `R$ ${agendamento.agreed_price}`}</div>
       </div>
-
-      {/* Botão WhatsApp */}
-      <button 
-        onClick={abrirWhatsapp}
-        style={{
-          background: '#25D366', border: 'none', borderRadius: '50%',
-          width: '45px', height: '45px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', marginLeft: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)'
-        }}
-      >
-        <MessageCircle size={24} color="white" fill="white" />
-      </button>
-
+      <button onClick={abrirWhatsapp} style={{ background: '#25D366', border: 'none', borderRadius: '50%', width: '45px', height: '45px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginLeft: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}><MessageCircle size={24} color="white" fill="white" /></button>
     </div>
   )
 }
@@ -307,7 +274,5 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions }) {
 const btnNavStyle = { background: '#f0f0f0', border: '1px solid #999', borderRadius: '8px', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '40px', minHeight: '40px' }
 const inputStyle = { padding: '12px', borderRadius: '8px', border: '1px solid #999', fontSize: '16px', background: 'white' }
 const btnFull = { width:'100%', padding:'15px', borderRadius:'8px', border:'none', color:'white', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }
-
-// Estilos do Modal de Edição (Overlay)
 const overlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }
 const modalBoxStyle = { background: 'white', width: '100%', maxWidth: '600px', borderRadius: '20px 20px 0 0', padding: '25px', animation: 'slideUp 0.3s ease-out' }
