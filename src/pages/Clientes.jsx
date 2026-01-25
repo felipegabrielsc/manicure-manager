@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { ArrowLeft, Save, Trash2, X, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
-import toast from 'react-hot-toast' // <--- IMPORTANTE
+import toast from 'react-hot-toast'
 
 export default function Clientes() {
   const [clientes, setClientes] = useState([])
@@ -17,7 +17,7 @@ export default function Clientes() {
   const [valorMensal, setValorMensal] = useState('')
   const [diaVencimento, setDiaVencimento] = useState('')
 
-  // Modal Confirmação (Mantido para o "Tem certeza?")
+  // Modal Confirmação
   const [modalOpen, setModalOpen] = useState(false)
   const [modalConfig, setModalConfig] = useState({ type: 'info', title: '', message: '' })
   const [idParaExcluir, setIdParaExcluir] = useState(null) 
@@ -73,24 +73,53 @@ export default function Clientes() {
     setModalOpen(true)
   }
 
+  // --- LÓGICA DE EXCLUSÃO SEGURA (ALTERADA AQUI) ---
   async function handleConfirmarModal() {
     if (modalConfig.type === 'confirm' && idParaExcluir) {
+        
+        // 1. VERIFICAR SE TEM PAGAMENTOS (TRAVA DE SEGURANÇA)
+        const { count: qtdFinanceiro } = await supabase
+            .from('transactions')
+            .select('*', { count: 'exact', head: true }) // head:true conta sem baixar os dados (rápido)
+            .eq('client_id', idParaExcluir)
+
+        // 2. VERIFICAR SE TEM AGENDAMENTOS (OPCIONAL, MAS RECOMENDADO)
+        const { count: qtdAgendamentos } = await supabase
+            .from('appointments')
+            .select('*', { count: 'exact', head: true })
+            .eq('client_id', idParaExcluir)
+
+        // SE TIVER QUALQUER HISTÓRICO, BLOQUEIA
+        if ((qtdFinanceiro || 0) > 0 || (qtdAgendamentos || 0) > 0) {
+            setModalOpen(false)
+            // Aviso sonoro visual (Toast de erro)
+            toast.error('Proibido excluir! Esta cliente possui pagamentos ou histórico registrados.', {
+                duration: 5000,
+                style: { border: '1px solid #dc2626', color: '#dc2626' },
+                icon: '🚫'
+            })
+            return
+        }
+
+        // SE NÃO TIVER NADA, PROSSEGUE COM A EXCLUSÃO
         const { error } = await supabase.from('clients').delete().eq('id', idParaExcluir)
+        
         if (!error) { 
-          toast.success('Cliente removida!') // <--- TOAST
+          toast.success('Cliente removida!')
           fetchClientes()
           setModalOpen(false) 
         } 
         else { 
           setModalOpen(false)
-          toast.error('Erro ao excluir: ' + error.message) // <--- TOAST
+          toast.error('Erro ao excluir: ' + error.message)
         }
+
     } else { fecharModal() }
   }
 
   async function handleSalvar(e) {
     e.preventDefault()
-    if (!novoNome) return toast.error("Nome obrigatório!") // <--- TOAST
+    if (!novoNome) return toast.error("Nome obrigatório!")
 
     const nomePadronizado = formatarNome(novoNome)
     const valorPadronizado = valorMensal ? parseFloat(valorMensal.replace(',', '.')) : null
@@ -108,9 +137,9 @@ export default function Clientes() {
     const { error } = await supabase.from('clients').insert(novoCliente)
     
     if (error) {
-      toast.error(error.message) // <--- TOAST
+      toast.error(error.message)
     } else {
-      toast.success(`${nomePadronizado} salva com sucesso!`) // <--- TOAST
+      toast.success(`${nomePadronizado} salva com sucesso!`)
       setNovoNome(''); setNovoTelefone(''); setTipoCliente('AVULSO'); setValorMensal(''); setDiaVencimento('');
       fetchClientes()
     }

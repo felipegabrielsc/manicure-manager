@@ -1,11 +1,15 @@
 // src/pages/Financeiro.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Filter, Trash2, PieChart } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Filter, Trash2, PieChart, HelpCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal' 
 // 1. IMPORTAÇÃO DOS GRÁFICOS
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+
+// 2. IMPORTAÇÃO DO TUTORIAL
+import { driver } from "driver.js";
+import "driver.js/dist/driver.css";
 
 export default function Financeiro() {
   const [loading, setLoading] = useState(true)
@@ -15,7 +19,7 @@ export default function Financeiro() {
   const [todasMovimentacoes, setTodasMovimentacoes] = useState([])
   const [mensalistasPendentes, setMensalistasPendentes] = useState([])
   
-  // 2. ESTADO DO GRÁFICO
+  // ESTADO DO GRÁFICO
   const [dadosGrafico, setDadosGrafico] = useState([])
 
   // Filtros
@@ -38,6 +42,43 @@ export default function Financeiro() {
   useEffect(() => {
     carregarFinanceiro()
   }, [dataAtual])
+
+  // --- FUNÇÃO DO TUTORIAL FINANCEIRO ---
+  const iniciarTutorial = () => {
+    const driverObj = driver({
+      showProgress: true,
+      nextBtnText: 'Próximo',
+      prevBtnText: 'Anterior',
+      doneBtnText: 'Entendi!',
+      steps: [
+        { 
+          element: '#fin-nav', 
+          popover: { title: 'Navegação', description: 'Use as setas para trocar de mês e ver o histórico financeiro.' } 
+        },
+        { 
+          element: '#fin-grafico', 
+          popover: { title: 'Gráfico Visual', description: 'Acompanhe visualmente suas Entradas (Verde), Saídas (Vermelho) e Lucro (Azul).' } 
+        },
+        { 
+          element: '#fin-cards', 
+          popover: { title: 'Resumo', description: 'Aqui estão os totais somados do mês selecionado.' } 
+        },
+        { 
+          element: '#fin-lucro', 
+          popover: { title: 'Seu Lucro', description: 'O valor que realmente sobra no seu bolso (Entradas - Saídas).' } 
+        },
+        { 
+          element: '#fin-novo', 
+          popover: { title: 'Lançamento Manual', description: 'Use este botão para adicionar despesas (ex: Acetona, Luz) ou receitas extras que não vieram da agenda.' } 
+        },
+        { 
+          element: '#fin-filtros', 
+          popover: { title: 'Filtros', description: 'Clique aqui para ver apenas Despesas, apenas Serviços ou tudo junto.' } 
+        }
+      ]
+    });
+    driverObj.drive();
+  }
 
   async function carregarFinanceiro() {
     setLoading(true)
@@ -89,7 +130,7 @@ export default function Financeiro() {
     listaFinal.sort((a, b) => new Date(b.date) - new Date(a.date))
     setTodasMovimentacoes(listaFinal)
 
-    // 5. CÁLCULO PARA O GRÁFICO (NOVO)
+    // 5. CÁLCULO PARA O GRÁFICO
     const totalEntradas = listaFinal.filter(m => m.type === 'RECEITA').reduce((acc, c) => acc + c.amount, 0)
     const totalSaidas = listaFinal.filter(m => m.type === 'DESPESA').reduce((acc, c) => acc + c.amount, 0)
     
@@ -174,16 +215,27 @@ export default function Financeiro() {
           <Link to="/" style={{ color: '#000' }}><ArrowLeft size={28} /></Link>
           <h2 style={{ margin: 0, fontSize: '18px', color: '#000', textTransform: 'capitalize' }}>{mesFormatado}</h2>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => mudarMes(-1)} style={btnNavStyle}>&lt;</button>
-          <button onClick={() => mudarMes(1)} style={btnNavStyle}>&gt;</button>
+        
+        {/* GRUPO DE NAVEGAÇÃO E TUTORIAL */}
+        <div id="fin-nav" style={{ display: 'flex', gap: '10px' }}>
+           {/* BOTÃO TUTORIAL */}
+           <button 
+              onClick={iniciarTutorial}
+              style={{...btnNavStyle, borderColor: '#d97706', color: '#d97706', background: '#fffbeb'}}
+              title="Ajuda"
+           >
+              <HelpCircle size={20} />
+           </button>
+
+           <button onClick={() => mudarMes(-1)} style={btnNavStyle}>&lt;</button>
+           <button onClick={() => mudarMes(1)} style={btnNavStyle}>&gt;</button>
         </div>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
 
-        {/* --- INÍCIO DO GRÁFICO (ADICIONADO AQUI) --- */}
-        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #eee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+        {/* --- GRÁFICO (COM ID) --- */}
+        <div id="fin-grafico" style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #eee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
             <h3 style={{marginTop:0, fontSize:'14px', color:'#666', marginBottom:'20px', display:'flex', alignItems:'center', gap:'5px'}}>
                 <PieChart size={16}/> Resumo do Mês
             </h3>
@@ -203,10 +255,9 @@ export default function Financeiro() {
                 </ResponsiveContainer>
             </div>
         </div>
-        {/* --- FIM DO GRÁFICO --- */}
 
-        {/* CARDS DINÂMICOS */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
+        {/* CARDS DINÂMICOS (COM ID) */}
+        <div id="fin-cards" style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
           <div style={{ flex: '1 1 150px', background: '#dcfce7', padding: '15px', borderRadius: '12px', border: '1px solid #16a34a' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#166534', marginBottom: '5px' }}>
               <TrendingUp size={20} /> <strong>Entradas</strong>
@@ -222,8 +273,8 @@ export default function Financeiro() {
           </div>
         </div>
 
-        {/* LUCRO DINÂMICO */}
-        <div style={{ background: lucroVisivel >= 0 ? '#1e293b' : '#7f1d1d', color: 'white', padding: '15px', borderRadius: '12px', textAlign: 'center', marginBottom: '25px', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
+        {/* LUCRO DINÂMICO (COM ID) */}
+        <div id="fin-lucro" style={{ background: lucroVisivel >= 0 ? '#1e293b' : '#7f1d1d', color: 'white', padding: '15px', borderRadius: '12px', textAlign: 'center', marginBottom: '25px', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
           <span style={{ display: 'block', fontSize: '12px', opacity: 0.8 }}>
             {filtroAtivo === 'TODOS' ? 'LUCRO LÍQUIDO (GERAL)' : `RESULTADO DO FILTRO (${filtroAtivo})`}
           </span>
@@ -249,8 +300,9 @@ export default function Financeiro() {
           </div>
         )}
 
+        {/* BOTÃO NOVO (COM ID) */}
         {!showForm && (
-          <button onClick={() => { setShowForm(true); setTipoLancamento('DESPESA'); setDesc(''); setValor(''); setClientIdVinculado(null); setDataLancamento(new Date().toISOString().split('T')[0]); }}
+          <button id="fin-novo" onClick={() => { setShowForm(true); setTipoLancamento('DESPESA'); setDesc(''); setValor(''); setClientIdVinculado(null); setDataLancamento(new Date().toISOString().split('T')[0]); }}
             style={{ width: '100%', padding: '15px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '20px' }}>
             <PlusCircle /> Lançamento Manual
           </button>
@@ -281,7 +333,8 @@ export default function Financeiro() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '10px' }}>
+        {/* FILTROS (COM ID) */}
+        <div id="fin-filtros" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '10px' }}>
           <button onClick={() => setFiltroAtivo('TODOS')} style={filtroAtivo === 'TODOS' ? btnFiltroAtivo : btnFiltroInativo}>Todos</button>
           <button onClick={() => setFiltroAtivo('AVULSO')} style={filtroAtivo === 'AVULSO' ? btnFiltroAtivo : btnFiltroInativo}>Serviços</button>
           <button onClick={() => setFiltroAtivo('MENSAL')} style={filtroAtivo === 'MENSAL' ? btnFiltroAtivo : btnFiltroInativo}>Mensalidades</button>
