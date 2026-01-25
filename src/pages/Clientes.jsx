@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { ArrowLeft, Save, Trash2, X, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
-
+import toast from 'react-hot-toast' // <--- IMPORTANTE
 
 export default function Clientes() {
   const [clientes, setClientes] = useState([])
@@ -17,7 +17,7 @@ export default function Clientes() {
   const [valorMensal, setValorMensal] = useState('')
   const [diaVencimento, setDiaVencimento] = useState('')
 
-  // Modal Confirmação
+  // Modal Confirmação (Mantido para o "Tem certeza?")
   const [modalOpen, setModalOpen] = useState(false)
   const [modalConfig, setModalConfig] = useState({ type: 'info', title: '', message: '' })
   const [idParaExcluir, setIdParaExcluir] = useState(null) 
@@ -27,11 +27,7 @@ export default function Clientes() {
   const [historicoCliente, setHistoricoCliente] = useState([])
   const [modalDetalheOpen, setModalDetalheOpen] = useState(false)
 
-  
-
-  useEffect(() => {
-    fetchClientes()
-  }, [])
+  useEffect(() => { fetchClientes() }, [])
 
   async function fetchClientes() {
     setLoading(true)
@@ -46,7 +42,6 @@ export default function Clientes() {
     setClienteDetalhe(cliente)
     setModalDetalheOpen(true)
     
-    // Busca últimos 5 agendamentos concluídos
     const { data } = await supabase
       .from('appointments')
       .select('start_time, services(name), agreed_price')
@@ -70,11 +65,9 @@ export default function Clientes() {
 
   // Modais
   const fecharModal = () => { setModalOpen(false); setIdParaExcluir(null) }
-  const showSucesso = (msg) => { setModalConfig({ type: 'success', title: 'Sucesso!', message: msg }); setModalOpen(true) }
-  const showErro = (msg) => { setModalConfig({ type: 'error', title: 'Atenção', message: msg }); setModalOpen(true) }
   
   const confirmarExclusao = (e, id, nome) => {
-    e.stopPropagation() // Não abre detalhes
+    e.stopPropagation() 
     setIdParaExcluir(id)
     setModalConfig({ type: 'confirm', title: 'Excluir Cliente?', message: `Tem certeza que deseja apagar ${nome}?` })
     setModalOpen(true)
@@ -83,17 +76,24 @@ export default function Clientes() {
   async function handleConfirmarModal() {
     if (modalConfig.type === 'confirm' && idParaExcluir) {
         const { error } = await supabase.from('clients').delete().eq('id', idParaExcluir)
-        if (!error) { fetchClientes(); setModalOpen(false) } 
-        else { setModalOpen(false); alert('Erro ao excluir') }
+        if (!error) { 
+          toast.success('Cliente removida!') // <--- TOAST
+          fetchClientes()
+          setModalOpen(false) 
+        } 
+        else { 
+          setModalOpen(false)
+          toast.error('Erro ao excluir: ' + error.message) // <--- TOAST
+        }
     } else { fecharModal() }
   }
 
   async function handleSalvar(e) {
     e.preventDefault()
-    if (!novoNome) return showErro("Nome obrigatório!")
+    if (!novoNome) return toast.error("Nome obrigatório!") // <--- TOAST
+
     const nomePadronizado = formatarNome(novoNome)
     const valorPadronizado = valorMensal ? parseFloat(valorMensal.replace(',', '.')) : null
-
     const { data: { user } } = await supabase.auth.getUser()
 
     const novoCliente = {
@@ -106,9 +106,11 @@ export default function Clientes() {
     }
 
     const { error } = await supabase.from('clients').insert(novoCliente)
-    if (error) showErro(error.message)
-    else {
-      showSucesso(`${nomePadronizado} salva!`)
+    
+    if (error) {
+      toast.error(error.message) // <--- TOAST
+    } else {
+      toast.success(`${nomePadronizado} salva com sucesso!`) // <--- TOAST
       setNovoNome(''); setNovoTelefone(''); setTipoCliente('AVULSO'); setValorMensal(''); setDiaVencimento('');
       fetchClientes()
     }

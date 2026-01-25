@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Calendar, User, Scissors, CheckCircle, AlertCircle, Save } from 'lucide-react'
 import SelectBusca from '../components/SelectBusca'
+import toast from 'react-hot-toast' // <--- IMPORTANTE
 
 export default function NovoAgendamento() {
   const navigate = useNavigate()
@@ -29,7 +30,7 @@ export default function NovoAgendamento() {
     fetchDados()
   }, [])
 
-  // Lógica de "Preview" (Cálculo em tempo real)
+  // Lógica de "Preview"
   const clienteSelecionado = clientes.find(c => c.id == selectedClienteId)
   const servicoSelecionado = servicos.find(s => s.id == selectedServicoId)
 
@@ -52,15 +53,12 @@ export default function NovoAgendamento() {
     e.preventDefault()
 
     if (!selectedClienteId || !selectedServicoId || !dataHora) {
-      return alert('Preencha todos os campos!')
+      return toast.error('Preencha todos os campos!') // <--- TOAST DE ERRO
     }
 
     setLoading(true)
 
-    // A Lógica de Negócio (O Segredo)
-    // Se for MENSALISTA, salva 0.00. Se for AVULSO, salva o preço do serviço.
     const precoFinal = isMensalista ? 0 : precoPreview
-
     const { data: { user } } = await supabase.auth.getUser()
 
     const { error } = await supabase
@@ -75,10 +73,10 @@ export default function NovoAgendamento() {
       })
 
     if (error) {
-      alert('Erro: ' + error.message)
+      toast.error('Erro ao agendar: ' + error.message) // <--- TOAST DE ERRO
       setLoading(false)
     } else {
-      // Sucesso! Volta pra agenda
+      toast.success('Agendamento realizado!') // <--- TOAST DE SUCESSO
       navigate('/')
     }
   }
@@ -150,7 +148,7 @@ export default function NovoAgendamento() {
             />
           </div>
 
-          {/* CARD DE RESUMO FINANCEIRO (AUTOMÁTICO) */}
+          {/* CARD DE RESUMO FINANCEIRO */}
           {selectedClienteId && selectedServicoId && (
             <div style={{
               background: isMensalista ? '#f3e8ff' : '#dcfce7',
@@ -163,7 +161,6 @@ export default function NovoAgendamento() {
               </span>
 
               {isMensalista ? (
-                // VISUAL MENSALISTA
                 <div>
                   <strong style={{ fontSize: '24px', color: '#581c87', display: 'block' }}>ISENTO</strong>
                   <span style={{ fontSize: '14px', color: '#6b21a8' }}>
@@ -171,7 +168,6 @@ export default function NovoAgendamento() {
                   </span>
                 </div>
               ) : (
-                // VISUAL AVULSO
                 <div>
                   <strong style={{ fontSize: '28px', color: '#14532d', display: 'block' }}>
                     R$ {precoPreview.toFixed(2)}
@@ -214,33 +210,15 @@ export default function NovoAgendamento() {
   )
 }
 
-// Estilos
 const cardStyle = {
-  background: 'white',
-  padding: '15px',
-  borderRadius: '12px',
-  boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-  border: '1px solid #ddd'
+  background: 'white', padding: '15px', borderRadius: '12px',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #ddd'
 }
-
 const labelHeaderStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '10px',
-  marginBottom: '10px',
-  fontWeight: 'bold',
-  color: '#000',
-  fontSize: '16px'
+  display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px',
+  fontWeight: 'bold', color: '#000', fontSize: '16px'
 }
-
 const inputStyle = {
-  width: '100%',
-  padding: '14px',
-  borderRadius: '8px',
-  border: '1px solid #999', // Contraste alto na borda
-  fontSize: '16px',
-  background: '#fff',
-  color: '#000',
-  boxSizing: 'border-box',
-  outline: 'none'
+  width: '100%', padding: '14px', borderRadius: '8px', border: '1px solid #999',
+  fontSize: '16px', background: '#fff', color: '#000', boxSizing: 'border-box', outline: 'none'
 }

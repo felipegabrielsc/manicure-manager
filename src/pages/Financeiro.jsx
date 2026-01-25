@@ -1,9 +1,11 @@
 // src/pages/Financeiro.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Filter, Trash2 } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Filter, Trash2, PieChart } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Modal from '../components/Modal' // Usando nosso modal
+import Modal from '../components/Modal' 
+// 1. IMPORTAÇÃO DOS GRÁFICOS
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 export default function Financeiro() {
   const [loading, setLoading] = useState(true)
@@ -12,6 +14,9 @@ export default function Financeiro() {
   // Dados Brutos (Do Banco)
   const [todasMovimentacoes, setTodasMovimentacoes] = useState([])
   const [mensalistasPendentes, setMensalistasPendentes] = useState([])
+  
+  // 2. ESTADO DO GRÁFICO
+  const [dadosGrafico, setDadosGrafico] = useState([])
 
   // Filtros
   const [filtroAtivo, setFiltroAtivo] = useState('TODOS')
@@ -39,7 +44,7 @@ export default function Financeiro() {
     const inicioMes = new Date(dataAtual.getFullYear(), dataAtual.getMonth(), 1)
     const fimMes = new Date(dataAtual.getFullYear(), dataAtual.getMonth() + 1, 0, 23, 59, 59)
 
-    // 1. BUSCAR AGENDAMENTOS CONCLUÍDOS (Receita Automática)
+    // 1. BUSCAR AGENDAMENTOS CONCLUÍDOS
     const { data: agendamentos } = await supabase
       .from('appointments')
       .select(`id, agreed_price, start_time, client_id, clients (name, type), services (name)`)
@@ -47,7 +52,7 @@ export default function Financeiro() {
       .lte('start_time', fimMes.toISOString())
       .eq('status', 'CONCLUIDO')
 
-    // 2. BUSCAR TRANSAÇÕES MANUAIS (Despesas e Mensalidades Pagas)
+    // 2. BUSCAR TRANSAÇÕES MANUAIS
     const { data: transacoes } = await supabase
       .from('transactions')
       .select('*')
@@ -55,12 +60,10 @@ export default function Financeiro() {
       .lte('date', fimMes.toISOString())
 
     // 3. PROCESSAMENTO DE DADOS
-    // Filtrar IDs de quem já pagou mensalidade este mês
     const idsPagosNoMes = transacoes
       ?.filter(t => t.type === 'RECEITA' && t.client_id)
       .map(t => t.client_id) || []
 
-    // Contar quantos serviços cada mensalista fez (para ajudar a calcular o valor)
     const contagemServicosMensalistas = {}
     agendamentos?.forEach(a => {
       if (a.clients?.type === 'MENSALISTA') {
@@ -68,9 +71,9 @@ export default function Financeiro() {
       }
     })
 
-    // 4. UNIFICAR LISTAS PARA O HISTÓRICO
+    // 4. UNIFICAR LISTAS
     const agendaFormatada = agendamentos
-      ?.filter(a => a.agreed_price > 0) // Só mostra no histórico se gerou valor avulso
+      ?.filter(a => a.agreed_price > 0)
       .map(a => ({
         id: `agenda-${a.id}`,
         description: `${a.clients?.name} - ${a.services?.name}`,
@@ -86,12 +89,21 @@ export default function Financeiro() {
     listaFinal.sort((a, b) => new Date(b.date) - new Date(a.date))
     setTodasMovimentacoes(listaFinal)
 
-    // 5. LISTA DE MENSALISTAS A PAGAR
-    const { data: clientesMensais } = await supabase.from('clients').select('*').eq('type', 'MENSALISTA')
+    // 5. CÁLCULO PARA O GRÁFICO (NOVO)
+    const totalEntradas = listaFinal.filter(m => m.type === 'RECEITA').reduce((acc, c) => acc + c.amount, 0)
+    const totalSaidas = listaFinal.filter(m => m.type === 'DESPESA').reduce((acc, c) => acc + c.amount, 0)
+    
+    setDadosGrafico([
+      { name: 'Entradas', valor: totalEntradas, color: '#16a34a' },
+      { name: 'Saídas', valor: totalSaidas, color: '#dc2626' },
+      { name: 'Lucro', valor: totalEntradas - totalSaidas, color: '#2563eb' }
+    ])
 
+    // 6. MENSALISTAS
+    const { data: clientesMensais } = await supabase.from('clients').select('*').eq('type', 'MENSALISTA')
     const pendentes = clientesMensais?.filter(c => !idsPagosNoMes.includes(c.id)).map(c => ({
       ...c,
-      servicosFeitos: contagemServicosMensalistas[c.id] || 0 // Adiciona a contagem aqui
+      servicosFeitos: contagemServicosMensalistas[c.id] || 0
     })) || []
 
     setMensalistasPendentes(pendentes)
@@ -99,7 +111,6 @@ export default function Financeiro() {
   }
 
   // --- LÓGICA DE FILTROS E TOTAIS DINÂMICOS ---
-
   const movimentacoesFiltradas = todasMovimentacoes.filter(m => {
     if (filtroAtivo === 'TODOS') return true
     if (filtroAtivo === 'AVULSO') return m.origem === 'AGENDA'
@@ -108,23 +119,14 @@ export default function Financeiro() {
     return true
   })
 
-  // Calcula os totais baseados SOMENTE no que está visível pelo filtro
-  const entradasVisiveis = movimentacoesFiltradas
-    .filter(m => m.type === 'RECEITA')
-    .reduce((acc, curr) => acc + curr.amount, 0)
-
-  const saidasVisiveis = movimentacoesFiltradas
-    .filter(m => m.type === 'DESPESA')
-    .reduce((acc, curr) => acc + curr.amount, 0)
-
+  const entradasVisiveis = movimentacoesFiltradas.filter(m => m.type === 'RECEITA').reduce((acc, curr) => acc + curr.amount, 0)
+  const saidasVisiveis = movimentacoesFiltradas.filter(m => m.type === 'DESPESA').reduce((acc, curr) => acc + curr.amount, 0)
   const lucroVisivel = entradasVisiveis - saidasVisiveis
 
   // --- AÇÕES ---
-
   function abrirCobrancaRapida(cliente) {
     setTipoLancamento('RECEITA_MENSAL')
     setDesc(`Mensalidade ${cliente.name}`)
-    // Se tiver valor fixo usa, senão deixa vazio pro usuário digitar
     setValor(cliente.monthly_fee ? cliente.monthly_fee.toString() : '')
     setClientIdVinculado(cliente.id)
     setDataLancamento(new Date().toISOString().split('T')[0])
@@ -134,44 +136,29 @@ export default function Financeiro() {
   async function handleSalvarLancamento(e) {
     e.preventDefault()
     if (!desc || !valor) return alert('Preencha descrição e valor!')
-
     const { data: { user } } = await supabase.auth.getUser()
-
     const { error } = await supabase.from('transactions').insert({
       description: desc,
       amount: parseFloat(valor.replace(',', '.')),
       type: tipoLancamento === 'RECEITA_MENSAL' ? 'RECEITA' : 'DESPESA',
       date: dataLancamento ? new Date(dataLancamento).toISOString() : new Date().toISOString(),
       client_id: clientIdVinculado,
-      user_id: user.id
+      user_id: user ? user.id : null 
     })
-
-    if (!error) {
-      setShowForm(false); setDesc(''); setValor(''); setClientIdVinculado(null);
-      carregarFinanceiro()
-    } else {
-      alert('Erro: ' + error.message)
-    }
+    if (!error) { setShowForm(false); setDesc(''); setValor(''); setClientIdVinculado(null); carregarFinanceiro() } 
+    else { alert('Erro: ' + error.message) }
   }
 
-  // Lógica de Exclusão
   const confirmarExclusao = (id) => {
     setIdParaExcluir(id)
-    setModal({
-      isOpen: true, type: 'confirm', title: 'Excluir Lançamento?',
-      message: 'Isso vai remover o valor do caixa. Se foi uma mensalidade, a cliente voltará para a lista de pendentes.'
-    })
+    setModal({ isOpen: true, type: 'confirm', title: 'Excluir Lançamento?', message: 'Isso vai remover o valor do caixa.' })
   }
 
   const executarExclusao = async () => {
     if (!idParaExcluir) return
     const { error } = await supabase.from('transactions').delete().eq('id', idParaExcluir)
-    if (!error) {
-      setModal({ isOpen: false })
-      carregarFinanceiro()
-    } else {
-      alert('Erro ao excluir')
-    }
+    if (!error) { setModal({ isOpen: false }); carregarFinanceiro() } 
+    else { alert('Erro ao excluir') }
   }
 
   const mudarMes = (d) => {
@@ -180,12 +167,8 @@ export default function Financeiro() {
 
   return (
     <div style={{ paddingBottom: '50px' }}>
-      <Modal
-        isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })}
-        type={modal.type} title={modal.title} message={modal.message} onConfirm={executarExclusao}
-      />
+      <Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} type={modal.type} title={modal.title} message={modal.message} onConfirm={executarExclusao} />
 
-      {/* Cabeçalho */}
       <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Link to="/" style={{ color: '#000' }}><ArrowLeft size={28} /></Link>
@@ -199,29 +182,44 @@ export default function Financeiro() {
 
       <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
 
-        {/* CARDS DINÂMICOS (Mudam conforme o filtro) */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
+        {/* --- INÍCIO DO GRÁFICO (ADICIONADO AQUI) --- */}
+        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #eee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+            <h3 style={{marginTop:0, fontSize:'14px', color:'#666', marginBottom:'20px', display:'flex', alignItems:'center', gap:'5px'}}>
+                <PieChart size={16}/> Resumo do Mês
+            </h3>
+            <div style={{ width: '100%', height: 200 }}>
+                <ResponsiveContainer>
+                    <BarChart data={dadosGrafico} margin={{ top: 5, right: 30, left: -20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} style={{ fontSize: '12px' }} />
+                        <YAxis axisLine={false} tickLine={false} style={{ fontSize: '12px' }} />
+                        <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius:'8px', border:'none', boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}} />
+                        <Bar dataKey="valor" radius={[4, 4, 0, 0]} barSize={40}>
+                            {dadosGrafico.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+        {/* --- FIM DO GRÁFICO --- */}
 
-          {/* Card Entradas */}
+        {/* CARDS DINÂMICOS */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
           <div style={{ flex: '1 1 150px', background: '#dcfce7', padding: '15px', borderRadius: '12px', border: '1px solid #16a34a' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#166534', marginBottom: '5px' }}>
               <TrendingUp size={20} /> <strong>Entradas</strong>
             </div>
-            <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#14532d', display: 'block' }}>
-              R$ {entradasVisiveis.toFixed(2)}
-            </span>
+            <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#14532d', display: 'block' }}>R$ {entradasVisiveis.toFixed(2)}</span>
           </div>
 
-          {/* Card Saídas */}
           <div style={{ flex: '1 1 150px', background: '#fee2e2', padding: '15px', borderRadius: '12px', border: '1px solid #dc2626' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#991b1b', marginBottom: '5px' }}>
               <TrendingDown size={20} /> <strong>Saídas</strong>
             </div>
-            <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#7f1d1d', display: 'block' }}>
-              R$ {saidasVisiveis.toFixed(2)}
-            </span>
+            <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#7f1d1d', display: 'block' }}>R$ {saidasVisiveis.toFixed(2)}</span>
           </div>
-
         </div>
 
         {/* LUCRO DINÂMICO */}
@@ -232,7 +230,7 @@ export default function Financeiro() {
           <strong style={{ fontSize: '28px' }}>R$ {lucroVisivel.toFixed(2)}</strong>
         </div>
 
-        {/* ÁREA DE COBRANÇA MENSALISTA (Agora com contador de serviços) */}
+        {/* MENSALISTAS */}
         {mensalistasPendentes.length > 0 && !showForm && (
           <div style={{ marginBottom: '30px' }}>
             <h3 style={{ color: '#6610f2', borderBottom: '2px solid #6610f2', paddingBottom: '5px' }}>Mensalidades a Receber</h3>
@@ -242,33 +240,22 @@ export default function Financeiro() {
                   <div>
                     <strong style={{ display: 'block', color: '#4a044e' }}>{cliente.name}</strong>
                     <small style={{ color: '#666', display: 'block' }}>Vence dia {cliente.monthly_due_day}</small>
-                    {/* AQUI ESTÁ A AJUDA PARA ELA CALCULAR O VALOR: */}
-                    <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>
-                      Fez {cliente.servicosFeitos} serviços este mês
-                    </span>
+                    <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>Fez {cliente.servicosFeitos} serviços este mês</span>
                   </div>
-                  <button
-                    onClick={() => abrirCobrancaRapida(cliente)}
-                    style={{ background: '#6610f2', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-                  >
-                    Receber
-                  </button>
+                  <button onClick={() => abrirCobrancaRapida(cliente)} style={{ background: '#6610f2', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Receber</button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* BOTÃO NOVO (Escondido se form aberto) */}
         {!showForm && (
           <button onClick={() => { setShowForm(true); setTipoLancamento('DESPESA'); setDesc(''); setValor(''); setClientIdVinculado(null); setDataLancamento(new Date().toISOString().split('T')[0]); }}
-            style={{ width: '100%', padding: '15px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '20px' }}
-          >
+            style={{ width: '100%', padding: '15px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '20px' }}>
             <PlusCircle /> Lançamento Manual
           </button>
         )}
 
-        {/* FORMULÁRIO */}
         {showForm && (
           <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '2px solid #2563eb', marginBottom: '20px' }}>
             <h3 style={{ marginTop: 0 }}>{clientIdVinculado ? 'Receber Mensalidade' : 'Novo Lançamento'}</h3>
@@ -280,14 +267,11 @@ export default function Financeiro() {
             )}
             <form onSubmit={handleSalvarLancamento} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div><label style={{ fontWeight: 'bold', fontSize: '12px' }}>Descrição</label><input value={desc} onChange={e => setDesc(e.target.value)} style={inputStyle} /></div>
-
-              {/* VALOR EDITÁVEL */}
               <div>
                 <label style={{ fontWeight: 'bold', fontSize: '12px' }}>Valor a Cobrar (R$)</label>
                 <input type="number" step="0.01" value={valor} onChange={e => setValor(e.target.value)} style={inputStyle} placeholder={clientIdVinculado ? "Digite o valor calculado" : "0.00"} />
                 {clientIdVinculado && <small style={{ color: '#666' }}>Edite conforme a quantidade de serviços.</small>}
               </div>
-
               <div><label style={{ fontWeight: 'bold', fontSize: '12px' }}>Data</label><input type="date" value={dataLancamento} onChange={e => setDataLancamento(e.target.value)} style={inputStyle} /></div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="button" onClick={() => setShowForm(false)} style={{ flex: 1, padding: '10px', background: '#ccc', border: 'none', borderRadius: '6px' }}>Cancelar</button>
@@ -297,7 +281,6 @@ export default function Financeiro() {
           </div>
         )}
 
-        {/* FILTROS */}
         <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '10px' }}>
           <button onClick={() => setFiltroAtivo('TODOS')} style={filtroAtivo === 'TODOS' ? btnFiltroAtivo : btnFiltroInativo}>Todos</button>
           <button onClick={() => setFiltroAtivo('AVULSO')} style={filtroAtivo === 'AVULSO' ? btnFiltroAtivo : btnFiltroInativo}>Serviços</button>
@@ -305,10 +288,8 @@ export default function Financeiro() {
           <button onClick={() => setFiltroAtivo('DESPESA')} style={filtroAtivo === 'DESPESA' ? btnFiltroAtivo : btnFiltroInativo}>Despesas</button>
         </div>
 
-        {/* LISTA HISTÓRICO */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {movimentacoesFiltradas.length === 0 && <p style={{ textAlign: 'center', color: '#888' }}>Nada encontrado neste filtro.</p>}
-
           {movimentacoesFiltradas.map(m => (
             <div key={m.id} style={{
               background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #ddd',
@@ -324,12 +305,10 @@ export default function Financeiro() {
                   <small style={{ color: '#666' }}>{new Date(m.date).toLocaleDateString('pt-BR')}</small>
                 </div>
               </div>
-
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <span style={{ fontWeight: 'bold', color: m.type === 'RECEITA' ? '#16a34a' : '#dc2626', fontSize: '16px' }}>
                   {m.type === 'DESPESA' ? '-' : '+'} R$ {m.amount.toFixed(2)}
                 </span>
-                {/* BOTÃO DE EXCLUIR (SÓ PARA MANUAIS) */}
                 {m.origem === 'MANUAL' && (
                   <button onClick={() => confirmarExclusao(m.id)} style={{ background: 'none', border: 'none', color: '#ccc', cursor: 'pointer' }}>
                     <Trash2 size={18} />
@@ -339,7 +318,6 @@ export default function Financeiro() {
             </div>
           ))}
         </div>
-
       </div>
     </div>
   )
