@@ -14,20 +14,38 @@ import Login from './pages/Login'
 import Landing from './pages/Landing'
 import ResumoAgendamento from './pages/ResumoAgendamento'
 import Configuracoes from './pages/Configuracoes'
-import AgendamentoPublico from './pages/AgendamentoPublico' // <--- IMPORTANTE: Importar a página
+import AgendamentoPublico from './pages/AgendamentoPublico'
+import Bloqueado from './pages/Bloqueado' 
+import Admin from './pages/Admin'
+import Cadastro from './pages/Cadastro' 
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [bloqueado, setBloqueado] = useState(false) // Estado do Banimento
 
   useEffect(() => {
+    // Função para verificar se está banido
+    const checkUserStatus = async (userId) => {
+      if (!userId) return;
+      const { data } = await supabase.from('profiles').select('is_blocked').eq('id', userId).single()
+      if (data && data.is_blocked === true) {
+        setBloqueado(true)
+      } else {
+        setBloqueado(false)
+      }
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      if (session) checkUserStatus(session.user.id)
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      if (session) checkUserStatus(session.user.id)
+      else setBloqueado(false)
       setLoading(false)
     })
 
@@ -38,28 +56,32 @@ export default function App() {
     return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
   }
 
+  // SE ESTIVER BLOQUEADO, RENDERIZA SÓ A TELA DE BLOQUEIO
+  if (session && bloqueado) {
+    return <Bloqueado />
+  }
+
   return (
     <BrowserRouter>
       <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
       
       <div style={{ minHeight: '100vh', background: '#eef2f6' }}>
         <Routes>
-          {/* --- ROTAS PÚBLICAS (Funcionam para qualquer pessoa) --- */}
+          {/* ROTAS PÚBLICAS */}
           <Route path="/resumo/:id" element={<ResumoAgendamento />} />
-          
-          {/* AQUI ESTAVA FALTANDO: A rota do link público */}
           <Route path="/agendar/:userId" element={<AgendamentoPublico />} />
 
+          <Route path="/cadastro-vip" element={<Cadastro />} />
+
           {!session ? (
-            /* --- USUÁRIO NÃO LOGADO --- */
+            /* USUÁRIO NÃO LOGADO */
             <>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
-              {/* Qualquer outra rota desconhecida manda pra Landing Page */}
               <Route path="*" element={<Navigate to="/" />} />
             </>
           ) : (
-            /* --- USUÁRIO LOGADO (Área Privada da Manicure) --- */
+            /* USUÁRIO LOGADO E LIBERADO (Pois já passou pelo if do bloqueio lá em cima) */
             <>
               <Route path="/" element={<Agenda />} />
               <Route path="/novo" element={<NovoAgendamento />} />
@@ -67,8 +89,10 @@ export default function App() {
               <Route path="/servicos" element={<Servicos />} />
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
+
+              {/* ROTA DO ADMIN */}
+              <Route path="/admin" element={<Admin />} />
               
-              {/* Qualquer outra rota desconhecida dentro do app volta pra Agenda */}
               <Route path="*" element={<Navigate to="/" />} />
             </>
           )}
