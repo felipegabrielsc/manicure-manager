@@ -1,234 +1,279 @@
 // src/pages/Clientes.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, Save, Trash2, X, Clock } from 'lucide-react'
+import { ArrowLeft, Search, User, Plus, Trash2, Edit2, DollarSign, Calendar, X, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import Modal from '../components/Modal' // Usando seu modal existente se houver, ou criando um simples aqui
 
 export default function Clientes() {
-  const [clientes, setClientes] = useState([])
   const [loading, setLoading] = useState(true)
-  
-  // Form
-  const [novoNome, setNovoNome] = useState('')
-  const [novoTelefone, setNovoTelefone] = useState('')
-  const [tipoCliente, setTipoCliente] = useState('AVULSO')
-  const [valorMensal, setValorMensal] = useState('')
-  const [diaVencimento, setDiaVencimento] = useState('')
+  const [clientes, setClientes] = useState([])
+  const [busca, setBusca] = useState('')
+  const [filtroPeriodo, setFiltroPeriodo] = useState('MES') // 'MES' ou 'TOTAL'
 
-  // Modal Confirmação
-  const [modalOpen, setModalOpen] = useState(false)
-  const [modalConfig, setModalConfig] = useState({ type: 'info', title: '', message: '' })
-  const [idParaExcluir, setIdParaExcluir] = useState(null) 
+  // Estados para Modal de Novo/Editar
+  const [modalAberto, setModalAberto] = useState(false)
+  const [nomeCliente, setNomeCliente] = useState('')
+  const [phoneCliente, setPhoneCliente] = useState('')
+  const [idEdicao, setIdEdicao] = useState(null)
 
-  // Modal Detalhes (Ficha)
-  const [clienteDetalhe, setClienteDetalhe] = useState(null)
-  const [historicoCliente, setHistoricoCliente] = useState([])
-  const [modalDetalheOpen, setModalDetalheOpen] = useState(false)
+  // Estados para Modal de Histórico
+  const [clienteSelecionada, setClienteSelecionada] = useState(null)
 
-  useEffect(() => { fetchClientes() }, [])
+  useEffect(() => {
+    carregarDados()
+  }, [filtroPeriodo]) // Recarrega quando muda o filtro
 
-  async function fetchClientes() {
+  async function carregarDados() {
     setLoading(true)
-    const { data, error } = await supabase.from('clients').select('*').order('name')
-    if (error) console.error(error)
-    else setClientes(data || [])
+    
+    // 1. Busca Clientes
+    const { data: clientsData, error: errClients } = await supabase
+      .from('clients')
+      .select('*')
+      .order('name')
+
+    if (errClients) { toast.error('Erro ao carregar clientes'); return; }
+
+    // 2. Busca Agendamentos CONCLUÍDOS para calcular gastos
+    let query = supabase
+      .from('appointments')
+      .select('client_id, agreed_price, start_time, services(name)')
+      .eq('status', 'CONCLUIDO')
+
+    // Aplica filtro de data se for "MES"
+    if (filtroPeriodo === 'MES') {
+        const hoje = new Date()
+        const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()
+        const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59).toISOString()
+        query = query.gte('start_time', inicioMes).lte('start_time', fimMes)
+    }
+
+    const { data: appointmentsData } = await query
+
+    // 3. Junta as informações (Map Reduce manual)
+    const clientesComGasto = clientsData.map(cliente => {
+        // Pega todos os agendamentos dessa cliente
+        const servicosFeitos = appointmentsData?.filter(app => app.client_id === cliente.id) || []
+        
+        // Soma o valor
+        const totalGasto = servicosFeitos.reduce((acc, curr) => acc + (Number(curr.agreed_price) || 0), 0)
+
+        return {
+            ...cliente,
+            totalGasto,
+            historico: servicosFeitos // Guarda para exibir no modal
+        }
+    })
+
+    // Ordena quem gastou mais primeiro
+    clientesComGasto.sort((a, b) => b.totalGasto - a.totalGasto)
+
+    setClientes(clientesComGasto)
     setLoading(false)
   }
 
-  // --- BUSCA HISTÓRICO PARA A FICHA ---
-  async function abrirDetalhes(cliente) {
-    setClienteDetalhe(cliente)
-    setModalDetalheOpen(true)
-    
-    const { data } = await supabase
-      .from('appointments')
-      .select('start_time, services(name), agreed_price')
-      .eq('client_id', cliente.id)
-      .eq('status', 'CONCLUIDO')
-      .order('start_time', { ascending: false })
-      .limit(5)
-      
-    setHistoricoCliente(data || [])
-  }
-
-  // Formatação
-  const handlePhoneChange = (e) => {
-    let value = e.target.value.replace(/\D/g, "").slice(0, 11)
-    value = value.replace(/^(\d{2})(\d)/g, "($1) $2")
-    value = value.replace(/(\d)(\d{4})$/, "$1-$2")
-    setNovoTelefone(value)
-  }
-  const handleValorChange = (e) => setValorMensal(e.target.value.replace(/[^0-9.,]/g, ''))
-  const formatarNome = (nome) => nome.toLowerCase().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-
-  // Modais
-  const fecharModal = () => { setModalOpen(false); setIdParaExcluir(null) }
-  
-  const confirmarExclusao = (e, id, nome) => {
-    e.stopPropagation() 
-    setIdParaExcluir(id)
-    setModalConfig({ type: 'confirm', title: 'Excluir Cliente?', message: `Tem certeza que deseja apagar ${nome}?` })
-    setModalOpen(true)
-  }
-
-  // --- LÓGICA DE EXCLUSÃO SEGURA (ALTERADA AQUI) ---
-  async function handleConfirmarModal() {
-    if (modalConfig.type === 'confirm' && idParaExcluir) {
-        
-        // 1. VERIFICAR SE TEM PAGAMENTOS (TRAVA DE SEGURANÇA)
-        const { count: qtdFinanceiro } = await supabase
-            .from('transactions')
-            .select('*', { count: 'exact', head: true }) // head:true conta sem baixar os dados (rápido)
-            .eq('client_id', idParaExcluir)
-
-        // 2. VERIFICAR SE TEM AGENDAMENTOS (OPCIONAL, MAS RECOMENDADO)
-        const { count: qtdAgendamentos } = await supabase
-            .from('appointments')
-            .select('*', { count: 'exact', head: true })
-            .eq('client_id', idParaExcluir)
-
-        // SE TIVER QUALQUER HISTÓRICO, BLOQUEIA
-        if ((qtdFinanceiro || 0) > 0 || (qtdAgendamentos || 0) > 0) {
-            setModalOpen(false)
-            // Aviso sonoro visual (Toast de erro)
-            toast.error('Proibido excluir! Esta cliente possui pagamentos ou histórico registrados.', {
-                duration: 5000,
-                style: { border: '1px solid #dc2626', color: '#dc2626' },
-                icon: '🚫'
-            })
-            return
-        }
-
-        // SE NÃO TIVER NADA, PROSSEGUE COM A EXCLUSÃO
-        const { error } = await supabase.from('clients').delete().eq('id', idParaExcluir)
-        
-        if (!error) { 
-          toast.success('Cliente removida!')
-          fetchClientes()
-          setModalOpen(false) 
-        } 
-        else { 
-          setModalOpen(false)
-          toast.error('Erro ao excluir: ' + error.message)
-        }
-
-    } else { fecharModal() }
-  }
-
-  async function handleSalvar(e) {
+  const salvarCliente = async (e) => {
     e.preventDefault()
-    if (!novoNome) return toast.error("Nome obrigatório!")
+    if (!nomeCliente || !phoneCliente) return toast.error('Preencha os campos')
 
-    const nomePadronizado = formatarNome(novoNome)
-    const valorPadronizado = valorMensal ? parseFloat(valorMensal.replace(',', '.')) : null
-    const { data: { user } } = await supabase.auth.getUser()
-
-    const novoCliente = {
-      name: nomePadronizado,
-      phone: novoTelefone,
-      type: tipoCliente,
-      user_id: user.id,
-      monthly_fee: tipoCliente === 'MENSALISTA' ? valorPadronizado : null,
-      monthly_due_day: tipoCliente === 'MENSALISTA' ? parseInt(diaVencimento) : null
+    const user = (await supabase.auth.getUser()).data.user
+    const dados = { 
+        name: nomeCliente, 
+        phone: phoneCliente, 
+        user_id: user.id,
+        type: 'AVULSO' // Padrão
     }
 
-    const { error } = await supabase.from('clients').insert(novoCliente)
-    
-    if (error) {
-      toast.error(error.message)
+    let error
+    if (idEdicao) {
+        const res = await supabase.from('clients').update(dados).eq('id', idEdicao)
+        error = res.error
     } else {
-      toast.success(`${nomePadronizado} salva com sucesso!`)
-      setNovoNome(''); setNovoTelefone(''); setTipoCliente('AVULSO'); setValorMensal(''); setDiaVencimento('');
-      fetchClientes()
+        const res = await supabase.from('clients').insert(dados)
+        error = res.error
+    }
+
+    if (error) toast.error('Erro ao salvar')
+    else {
+        toast.success('Cliente salva!')
+        setModalAberto(false)
+        limparForm()
+        carregarDados()
     }
   }
+
+  const deletarCliente = async (id) => {
+      if(!window.confirm("Tem certeza? Isso apaga o histórico dela.")) return;
+      const { error } = await supabase.from('clients').delete().eq('id', id)
+      if (error) toast.error('Erro ao excluir')
+      else { toast.success('Excluída'); carregarDados(); }
+  }
+
+  const abrirEdicao = (c, e) => {
+      e.stopPropagation() // Para não abrir o histórico
+      setIdEdicao(c.id)
+      setNomeCliente(c.name)
+      setPhoneCliente(c.phone)
+      setModalAberto(true)
+  }
+
+  const limparForm = () => { setIdEdicao(null); setNomeCliente(''); setPhoneCliente('') }
+
+  const filtrarLista = clientes.filter(c => c.name.toLowerCase().includes(busca.toLowerCase()))
 
   return (
-    <div style={{ paddingBottom: '50px' }}>
-      <Modal isOpen={modalOpen} onClose={fecharModal} type={modalConfig.type} title={modalConfig.title} message={modalConfig.message} onConfirm={handleConfirmarModal} />
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: '80px', fontFamily: 'sans-serif' }}>
+      
+      {/* CABEÇALHO */}
+      <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+            <Link to="/" style={{ color: '#000' }}><ArrowLeft size={24} /></Link>
+            <h2 style={{ margin: 0, fontSize: '20px' }}>Clientes</h2>
+        </div>
+        <button onClick={() => { limparForm(); setModalAberto(true) }} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <Plus size={24} />
+        </button>
+      </div>
 
-      {/* MODAL DETALHES (FICHA DA CLIENTE) */}
-      {modalDetalheOpen && clienteDetalhe && (
-        <div style={overlayStyle} onClick={(e) => { if(e.target === e.currentTarget) setModalDetalheOpen(false) }}>
-          <div style={modalBoxStyle}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
-               <h3 style={{margin:0, color:'#000'}}>{clienteDetalhe.name}</h3>
-               <button onClick={() => setModalDetalheOpen(false)} style={{background:'none', border:'none', cursor:'pointer'}}><X size={24}/></button>
-            </div>
-            
-            <p style={{marginBottom:'5px'}}><strong>WhatsApp:</strong> {clienteDetalhe.phone || 'Não informado'}</p>
-            <p><strong>Tipo:</strong> <span style={{fontWeight:'bold', color: clienteDetalhe.type === 'MENSALISTA' ? '#6610f2' : '#155724'}}>{clienteDetalhe.type}</span></p>
-            
-            <h4 style={{marginTop:'25px', marginBottom:'10px', borderBottom:'1px solid #ccc', paddingBottom:'5px', color:'#000'}}>Últimos Serviços (Concluídos)</h4>
-            {historicoCliente.length === 0 ? <p style={{color:'#666'}}>Nenhum serviço registrado.</p> : (
-              <ul style={{paddingLeft:'0', listStyle:'none'}}>
-                {historicoCliente.map((h, i) => (
-                  <li key={i} style={{marginBottom:'10px', paddingBottom:'10px', borderBottom:'1px solid #eee', display:'flex', alignItems:'center', gap:'10px'}}>
-                    <Clock size={16} color="#666"/>
-                    <div>
-                      <span style={{fontWeight:'bold', color:'#000', display:'block'}}>{h.services?.name}</span>
-                      <small style={{color:'#666'}}>{new Date(h.start_time).toLocaleDateString()} • R$ {h.agreed_price}</small>
+      {/* FILTROS E BUSCA */}
+      <div style={{ padding: '20px 20px 0 20px', maxWidth: '600px', margin: '0 auto' }}>
+        
+        {/* Barra de Busca */}
+        <div style={{ position: 'relative', marginBottom: '15px' }}>
+            <Search size={20} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '12px' }} />
+            <input 
+                placeholder="Buscar cliente..." 
+                value={busca}
+                onChange={e => setBusca(e.target.value)}
+                style={{ width: '100%', padding: '12px 12px 12px 40px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', boxSizing:'border-box' }} 
+            />
+        </div>
+
+        {/* Filtro de Gasto */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+            <button 
+                onClick={() => setFiltroPeriodo('MES')}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: filtroPeriodo === 'MES' ? '1px solid #2563eb' : '1px solid #e2e8f0', background: filtroPeriodo === 'MES' ? '#eff6ff' : 'white', color: filtroPeriodo === 'MES' ? '#2563eb' : '#64748b', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}
+            >
+                📅 Este Mês
+            </button>
+            <button 
+                onClick={() => setFiltroPeriodo('TOTAL')}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: filtroPeriodo === 'TOTAL' ? '1px solid #2563eb' : '1px solid #e2e8f0', background: filtroPeriodo === 'TOTAL' ? '#eff6ff' : 'white', color: filtroPeriodo === 'TOTAL' ? '#2563eb' : '#64748b', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}
+            >
+                ♾️ Tudo
+            </button>
+        </div>
+
+        {/* LISTA DE CLIENTES */}
+        {loading ? <div style={{textAlign:'center', color:'#666'}}>Carregando...</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {filtrarLista.map(cliente => (
+                    <div 
+                        key={cliente.id} 
+                        onClick={() => setClienteSelecionada(cliente)}
+                        style={{ background: 'white', borderRadius: '12px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                    >
+                        {/* Info Principal */}
+                        <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+                            <div style={{width:'40px', height:'40px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b'}}>
+                                <User size={20}/>
+                            </div>
+                            <div>
+                                <h3 style={{margin:0, fontSize:'16px', color:'#1e293b'}}>{cliente.name}</h3>
+                                <span style={{fontSize:'12px', color:'#64748b'}}>{cliente.phone}</span>
+                            </div>
+                        </div>
+
+                        {/* Valor Gasto (O Destaque) */}
+                        <div style={{textAlign:'right'}}>
+                            <span style={{display:'block', fontSize:'10px', color:'#64748b', fontWeight:'bold'}}>GASTOU</span>
+                            <span style={{color: cliente.totalGasto > 0 ? '#16a34a' : '#94a3b8', fontWeight: 'bold', fontSize: '16px'}}>
+                                R$ {cliente.totalGasto}
+                            </span>
+                        </div>
                     </div>
-                  </li>
                 ))}
-              </ul>
-            )}
-            <button onClick={() => setModalDetalheOpen(false)} style={{...btnSalvar, background:'#666', marginTop:'20px'}}>Fechar</button>
-          </div>
+            </div>
+        )}
+      </div>
+
+      {/* --- MODAL HISTÓRICO DA CLIENTE --- */}
+      {clienteSelecionada && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={(e) => { if(e.target === e.currentTarget) setClienteSelecionada(null) }}>
+            <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderRadius: '20px 20px 0 0', padding: '25px', maxHeight: '80vh', overflowY: 'auto', animation: 'slideUp 0.3s ease-out' }}>
+                
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+                    <div>
+                        <h2 style={{margin:0}}>{clienteSelecionada.name}</h2>
+                        <p style={{margin:0, color:'#666', fontSize:'14px'}}>Extrato de Serviços ({filtroPeriodo === 'MES' ? 'Mês Atual' : 'Total'})</p>
+                    </div>
+                    <button onClick={() => setClienteSelecionada(null)} style={{background:'none', border:'none'}}><X/></button>
+                </div>
+
+                <div style={{background:'#f0fdf4', padding:'15px', borderRadius:'12px', textAlign:'center', marginBottom:'20px', border:'1px solid #bbf7d0'}}>
+                    <span style={{color:'#166534', fontSize:'12px', fontWeight:'bold'}}>TOTAL INVESTIDO NA BELEZA</span>
+                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#15803d'}}>R$ {clienteSelecionada.totalGasto}</div>
+                </div>
+
+                <h4 style={{marginBottom:'10px', color:'#64748b'}}>Histórico Detalhado:</h4>
+                {clienteSelecionada.historico.length === 0 ? (
+                    <p style={{textAlign:'center', color:'#999'}}>Nenhum serviço encontrado neste período.</p>
+                ) : (
+                    <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+                        {clienteSelecionada.historico.map((item, idx) => (
+                            <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'10px', borderBottom:'1px solid #f1f5f9'}}>
+                                <div>
+                                    <strong style={{display:'block', fontSize:'14px', color:'#333'}}>{item.services?.name || 'Serviço'}</strong>
+                                    <span style={{fontSize:'12px', color:'#999'}}>
+                                        {new Date(item.start_time).toLocaleDateString('pt-BR')} às {new Date(item.start_time).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+                                    </span>
+                                </div>
+                                <span style={{fontWeight:'bold', color:'#16a34a'}}>R$ {item.agreed_price}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div style={{display:'flex', gap:'10px', marginTop:'25px', borderTop:'1px solid #eee', paddingTop:'20px'}}>
+                    <button onClick={() => { setClienteSelecionada(null); abrirEdicao(clienteSelecionada, { stopPropagation: ()=>{} }) }} style={{flex:1, padding:'12px', background:'white', border:'1px solid #2563eb', color:'#2563eb', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
+                        <Edit2 size={16}/> Editar Dados
+                    </button>
+                    <button onClick={() => { setClienteSelecionada(null); deletarCliente(clienteSelecionada.id) }} style={{flex:1, padding:'12px', background:'#fee2e2', border:'none', color:'#dc2626', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
+                        <Trash2 size={16}/> Excluir
+                    </button>
+                </div>
+
+            </div>
         </div>
       )}
 
-      {/* CABEÇALHO */}
-      <div className="header-safe-area" style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <Link to="/" style={{ color: '#000' }}><ArrowLeft size={28} /></Link>
-        <h2 style={{ margin: 0, fontSize: '20px', color: '#000' }}>Gerenciar Clientes</h2>
-      </div>
-
-      <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #ddd', marginBottom: '30px' }}>
-          <h3 style={{ marginTop: 0, color: '#2563eb' }}>Nova Cliente</h3>
-          <form onSubmit={handleSalvar} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <div><label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Nome Completo</label><input placeholder="Ex: Ana Maria" value={novoNome} onChange={e => setNovoNome(e.target.value)} style={inputStyle} /></div>
-            <div><label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>WhatsApp</label><input placeholder="(16) 99999-9999" value={novoTelefone} onChange={handlePhoneChange} maxLength={15} inputMode="numeric" style={inputStyle} /></div>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-              <button type="button" onClick={() => setTipoCliente('AVULSO')} style={tipoCliente === 'AVULSO' ? btnActive : btnInactive}>Avulso</button>
-              <button type="button" onClick={() => setTipoCliente('MENSALISTA')} style={tipoCliente === 'MENSALISTA' ? btnActive : btnInactive}>Mensalista</button>
-            </div>
-            {tipoCliente === 'MENSALISTA' && (
-              <div style={{ background: '#f3e8ff', padding: '15px', borderRadius: '8px', border: '1px solid #d8b4fe' }}>
-                <label style={{display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#581c87'}}>Valor Mensal (R$):</label><input type="text" placeholder="Ex: 120,00" value={valorMensal} onChange={handleValorChange} inputMode="decimal" style={{...inputStyle, borderColor: '#a855f7'}} />
-                <label style={{display: 'block', marginTop: '10px', marginBottom: '5px', fontWeight: 'bold', color: '#581c87'}}>Dia Vencimento:</label><input type="number" placeholder="Ex: 5" max="31" min="1" value={diaVencimento} onChange={e => setDiaVencimento(e.target.value)} style={{...inputStyle, borderColor: '#a855f7'}} />
-              </div>
-            )}
-            <button type="submit" style={btnSalvar}><Save size={20} style={{ marginRight: '10px' }} /> Salvar Cliente</button>
-          </form>
+      {/* --- MODAL NOVO/EDITAR --- */}
+      {modalAberto && (
+        <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.5)', zIndex:60, display:'flex', alignItems:'center', justifyContent:'center'}} onClick={(e)=>{if(e.target===e.currentTarget) setModalAberto(false)}}>
+             <div style={{background:'white', padding:'25px', borderRadius:'16px', width:'90%', maxWidth:'400px'}}>
+                 <h3 style={{marginTop:0}}>{idEdicao ? 'Editar Cliente' : 'Nova Cliente'}</h3>
+                 <form onSubmit={salvarCliente}>
+                     <div style={{marginBottom:'15px'}}>
+                         <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Nome</label>
+                         <input required value={nomeCliente} onChange={e=>setNomeCliente(e.target.value)} style={inputStyle} placeholder="Ex: Maria Silva" />
+                     </div>
+                     <div style={{marginBottom:'20px'}}>
+                         <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>WhatsApp</label>
+                         <input required value={phoneCliente} onChange={e=>setPhoneCliente(e.target.value)} style={inputStyle} placeholder="(00) 00000-0000" />
+                     </div>
+                     <button type="submit" style={btnStyle}>Salvar</button>
+                 </form>
+             </div>
         </div>
+      )}
 
-        <h3 style={{ color: '#000' }}>Lista de Clientes ({clientes.length})</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {loading ? <p>Carregando...</p> : clientes.map(c => (
-            <div key={c.id} onClick={() => abrirDetalhes(c)} style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-              <div>
-                <strong style={{ fontSize: '16px', display: 'block' }}>{c.name}</strong>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '4px' }}>
-                    <span style={{ fontSize: '12px', color: c.type === 'MENSALISTA' ? '#6610f2' : '#155724', fontWeight: 'bold' }}>{c.type}</span>
-                    {c.phone && <span style={{fontSize: '12px', color: '#666'}}>• {c.phone}</span>}
-                </div>
-              </div>
-              <button onClick={(e) => confirmarExclusao(e, c.id, c.name)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '10px' }}><Trash2 size={24} /></button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
     </div>
   )
 }
 
-const inputStyle = { padding: '12px', borderRadius: '8px', border: '1px solid #999', fontSize: '16px', width: '100%', boxSizing: 'border-box' }
-const btnActive = { flex: 1, padding: '10px', borderRadius: '8px', border: '2px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer' }
-const btnInactive = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #ccc', background: '#fff', color: '#666', cursor: 'pointer' }
-const btnSalvar = { padding: '15px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 'bold', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '10px', cursor: 'pointer' }
-const overlayStyle = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }
-const modalBoxStyle = { background: 'white', width: '90%', maxWidth: '400px', borderRadius: '16px', padding: '25px', animation: 'fadeIn 0.2s', maxHeight:'80vh', overflowY:'auto' }
+const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing:'border-box' }
+const btnStyle = { width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 'bold', cursor:'pointer' }
