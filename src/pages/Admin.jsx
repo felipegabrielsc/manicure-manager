@@ -2,17 +2,20 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { Link } from 'react-router-dom'
-import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet } from 'lucide-react'
+import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet, Lock, Unlock, UserX, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function Admin() {
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
+  
+  // Métricas
   const [totalUsers, setTotalUsers] = useState(0)
-
-  // Novas Métricas Financeiras
-  const [receitaSetup, setReceitaSetup] = useState(0) // Os R$ 200 fixos
-  const [rendaMensal, setRendaMensal] = useState(0)   // Os R$ 50 mensais
+  const [receitaSetup, setReceitaSetup] = useState(0)
+  const [rendaMensal, setRendaMensal] = useState(0)
+  
+  // Lista de Usuários para Gestão
+  const [manicures, setManicures] = useState([])
 
   useEffect(() => {
     checkAdmin()
@@ -28,18 +31,39 @@ export default function Admin() {
     if (perfil?.is_admin) {
         setIsAdmin(true)
         
-        // 2. Conta total de manicures cadastradas
-        const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true })
-        
-        // 3. Aplica sua regra de negócio
-        // Regra: R$ 200 por cabeça (uma vez) + R$ 50 por cabeça (todo mês)
-        const totalManicures = count || 0
-        setTotalUsers(totalManicures)
-        
-        setReceitaSetup(totalManicures * 200) 
-        setRendaMensal(totalManicures * 50)
+        // 2. Busca TODAS as manicures (select * já pega o email agora)
+        const { data: lista } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('is_admin', false) 
+            .order('created_at', { ascending: false }) 
+            
+        if (lista) {
+            setManicures(lista)
+            
+            // Atualiza métricas
+            const total = lista.length
+            setTotalUsers(total)
+            setReceitaSetup(total * 200)
+            setRendaMensal(total * 50)
+        }
     }
     setLoading(false)
+  }
+
+  const toggleBloqueio = async (id, statusAtual) => {
+      const novoStatus = !statusAtual
+      
+      const { error } = await supabase.from('profiles').update({ is_blocked: novoStatus }).eq('id', id)
+      
+      if (error) {
+          toast.error("Erro ao atualizar status")
+      } else {
+          setManicures(prev => prev.map(m => m.id === id ? { ...m, is_blocked: novoStatus } : m))
+          
+          if (novoStatus) toast('Conta Bloqueada!', { icon: '🚫' })
+          else toast.success('Conta Liberada!')
+      }
   }
 
   const copiarLinkConvite = () => {
@@ -48,7 +72,7 @@ export default function Admin() {
     toast.success('Link de convite copiado!', { icon: '🎟️' })
   }
 
-  if (loading) return <div style={{padding:'20px'}}>Verificando permissões...</div>
+  if (loading) return <div style={{padding:'20px'}}>Carregando sistema...</div>
 
   if (!isAdmin) return (
     <div style={{padding:'50px', textAlign:'center'}}>
@@ -68,74 +92,96 @@ export default function Admin() {
                     <ShieldCheck size={32} color="#4ade80"/>
                     <div>
                         <h2 style={{margin:0}}>Painel do Chefe</h2>
-                        <span style={{fontSize:'12px', opacity:0.7, letterSpacing:'1px'}}>VISÃO GERAL DO NEGÓCIO</span>
+                        <span style={{fontSize:'12px', opacity:0.7, letterSpacing:'1px'}}>VISÃO GERAL</span>
                     </div>
                 </div>
                 <Link to="/" style={{color:'white', opacity:0.8}}><ArrowLeft/></Link>
             </div>
         </div>
 
-        {/* GRID DE MÉTRICAS FINANCEIRAS */}
+        {/* MÉTRICAS */}
         <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:'20px', marginBottom:'30px'}}>
-            
-            {/* CARD 1: TOTAL DE CLIENTES */}
             <div style={{background:'white', padding:'25px', borderRadius:'16px', boxShadow:'0 2px 5px rgba(0,0,0,0.05)', display:'flex', alignItems:'center', gap:'20px'}}>
-                <div style={{background:'#eff6ff', padding:'15px', borderRadius:'12px'}}>
-                    <Users size={30} color="#2563eb"/>
-                </div>
-                <div>
-                    <span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold', textTransform:'uppercase'}}>Clientes Ativos</span>
-                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#0f172a', lineHeight:'1'}}>{totalUsers}</div>
-                </div>
+                <div style={{background:'#eff6ff', padding:'15px', borderRadius:'12px'}}><Users size={30} color="#2563eb"/></div>
+                <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>CLIENTES</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#0f172a'}}>{totalUsers}</div></div>
             </div>
-
-            {/* CARD 2: CAIXA GERADO (SETUP) */}
             <div style={{background:'white', padding:'25px', borderRadius:'16px', boxShadow:'0 2px 5px rgba(0,0,0,0.05)', display:'flex', alignItems:'center', gap:'20px'}}>
-                <div style={{background:'#f0fdf4', padding:'15px', borderRadius:'12px'}}>
-                    <Wallet size={30} color="#16a34a"/>
-                </div>
-                <div>
-                    <span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold', textTransform:'uppercase'}}>Total Recebido (Setups)</span>
-                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#16a34a', lineHeight:'1'}}>
-                        R$ {receitaSetup.toLocaleString('pt-BR')}
-                    </div>
-                    <span style={{fontSize:'12px', color:'#16a34a'}}>Acumulado (R$ 200/uni)</span>
-                </div>
+                <div style={{background:'#f0fdf4', padding:'15px', borderRadius:'12px'}}><Wallet size={30} color="#16a34a"/></div>
+                <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>TOTAL SETUP</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#16a34a'}}>R$ {receitaSetup}</div></div>
             </div>
-
-            {/* CARD 3: RECORRÊNCIA MENSAL (MRR) */}
             <div style={{background:'white', padding:'25px', borderRadius:'16px', boxShadow:'0 2px 5px rgba(0,0,0,0.05)', display:'flex', alignItems:'center', gap:'20px'}}>
-                <div style={{background:'#fdf2f8', padding:'15px', borderRadius:'12px'}}>
-                    <TrendingUp size={30} color="#db2777"/>
-                </div>
-                <div>
-                    <span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold', textTransform:'uppercase'}}>Renda Mensal (MRR)</span>
-                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#db2777', lineHeight:'1'}}>
-                        R$ {rendaMensal.toLocaleString('pt-BR')}
-                    </div>
-                    <span style={{fontSize:'12px', color:'#db2777'}}>Todo mês na conta (R$ 50/uni)</span>
-                </div>
+                <div style={{background:'#fdf2f8', padding:'15px', borderRadius:'12px'}}><TrendingUp size={30} color="#db2777"/></div>
+                <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>RENDA MENSAL</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#db2777'}}>R$ {rendaMensal}</div></div>
             </div>
         </div>
 
-        {/* ÁREA DE AÇÃO: CONVIDAR */}
-        <div style={{background:'white', padding:'30px', borderRadius:'16px', boxShadow:'0 4px 10px rgba(0,0,0,0.05)', textAlign:'center', maxWidth:'600px', margin:'0 auto'}}>
-            <div style={{background:'#eff6ff', width:'70px', height:'70px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px'}}>
-                <Users size={32} color="#2563eb"/>
+        {/* ÁREA DE CONVITE */}
+        <div style={{background:'white', padding:'20px', borderRadius:'16px', marginBottom:'30px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'15px'}}>
+            <div>
+                <h3 style={{margin:0, color:'#1e293b'}}>Link de Cadastro VIP</h3>
+                <p style={{margin:0, fontSize:'14px', color:'#64748b'}}>Use este link para cadastrar novas manicures.</p>
             </div>
-            
-            <h3 style={{margin:'0 0 10px 0', fontSize:'22px', color:'#1e293b'}}>Adicionar Nova Manicure</h3>
-            <p style={{color:'#64748b', marginBottom:'25px', lineHeight:'1.5'}}>
-                Para colocar uma nova cliente no sistema e cobrar os <strong>R$ 200,00</strong> de setup, envie este link exclusivo para ela criar a conta.
-            </p>
-            
-            <div style={{background:'#f8fafc', padding:'15px', borderRadius:'8px', fontSize:'14px', color:'#475569', wordBreak:'break-all', marginBottom:'25px', border:'1px solid #e2e8f0', fontFamily:'monospace'}}>
-                {window.location.origin}/cadastro-vip
-            </div>
-
-            <button onClick={copiarLinkConvite} style={{width:'100%', padding:'18px', background:'#2563eb', color:'white', border:'none', borderRadius:'12px', fontWeight:'bold', fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px', transition:'all 0.2s'}}>
-                <Copy size={20}/> Copiar Link de Convite
+            <button onClick={copiarLinkConvite} style={{padding:'10px 20px', background:'#2563eb', color:'white', border:'none', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', gap:'8px'}}>
+                <Copy size={18}/> Copiar Link
             </button>
+        </div>
+
+        {/* LISTA DE GESTÃO DE BLOQUEIO */}
+        <h3 style={{color:'#475569', marginBottom:'15px', display:'flex', alignItems:'center', gap:'10px'}}><UserX size={20}/> Gestão de Acesso</h3>
+        
+        <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
+            {manicures.length === 0 ? <p style={{color:'#999'}}>Nenhuma manicure cadastrada ainda.</p> : manicures.map(m => (
+                <div key={m.id} style={{
+                    background: m.is_blocked ? '#fef2f2' : 'white', 
+                    padding:'15px', borderRadius:'12px', 
+                    border: m.is_blocked ? '1px solid #fca5a5' : '1px solid #e2e8f0',
+                    display:'flex', justifyContent:'space-between', alignItems:'center'
+                }}>
+                    
+                    {/* Infos da Manicure */}
+                    <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+                        <div style={{
+                            width:'40px', height:'40px', borderRadius:'50%', 
+                            background: m.is_blocked ? '#fee2e2' : '#f1f5f9', 
+                            display:'flex', alignItems:'center', justifyContent:'center',
+                            color: m.is_blocked ? '#dc2626' : '#64748b'
+                        }}>
+                            {m.is_blocked ? <Lock size={20}/> : <Users size={20}/>}
+                        </div>
+                        <div>
+                            {/* Nome */}
+                            <strong style={{display:'block', color: m.is_blocked ? '#991b1b' : '#1e293b'}}>
+                                {m.business_name || 'Sem nome cadastrado'}
+                            </strong>
+                            
+                            {/* E-mail (NOVIDADE) */}
+                            <div style={{display:'flex', alignItems:'center', gap:'5px', fontSize:'12px', color:'#64748b', marginTop:'2px'}}>
+                                <Mail size={12}/> {m.email || 'E-mail não sincronizado'}
+                            </div>
+
+                            {/* WhatsApp */}
+                            <span style={{fontSize:'12px', color: m.is_blocked ? '#b91c1c' : '#94a3b8', display:'block', marginTop:'2px'}}>
+                                {m.whatsapp ? m.whatsapp : 'Sem WhatsApp'}
+                            </span>
+
+                            {m.is_blocked && <span style={{fontSize:'10px', background:'#ef4444', color:'white', padding:'2px 6px', borderRadius:'4px', marginTop:'5px', display:'inline-block'}}>BLOQUEADA</span>}
+                        </div>
+                    </div>
+
+                    {/* Botão de Ação */}
+                    <button 
+                        onClick={() => toggleBloqueio(m.id, m.is_blocked)}
+                        style={{
+                            padding:'8px 15px', borderRadius:'8px', cursor:'pointer', fontWeight:'bold', fontSize:'12px', display:'flex', alignItems:'center', gap:'5px', border:'none',
+                            background: m.is_blocked ? '#dcfce7' : '#fee2e2',
+                            color: m.is_blocked ? '#166534' : '#991b1b'
+                        }}
+                    >
+                        {m.is_blocked ? <><Unlock size={14}/> LIBERAR</> : <><Lock size={14}/> BLOQUEAR</>}
+                    </button>
+
+                </div>
+            ))}
         </div>
 
     </div>

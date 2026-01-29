@@ -1,7 +1,7 @@
 // src/pages/Agenda.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ChevronLeft, ChevronRight, Calendar, User, Plus, Scissors, DollarSign, CheckSquare, Square, MessageCircle, Trash2, Clock, X, LogOut, CreditCard, HelpCircle, AlertTriangle, Settings, CheckCircle, Ban } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, User, Plus, Scissors, DollarSign, CheckSquare, Square, MessageCircle, Trash2, Clock, X, LogOut, CreditCard, HelpCircle, AlertTriangle, Settings, CheckCircle, Ban, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
@@ -12,6 +12,9 @@ export default function Agenda() {
   const [dataAtual, setDataAtual] = useState(new Date())
   const [agendamentos, setAgendamentos] = useState([])
   const [loading, setLoading] = useState(true)
+  
+  // ESTADO PARA SABER SE É ADMIN
+  const [isAdmin, setIsAdmin] = useState(false)
 
   // Estados dos Modais
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -27,7 +30,19 @@ export default function Agenda() {
     weekday: 'long', day: '2-digit', month: 'long'
   }).format(dataAtual)
 
+  // Busca agendamentos quando muda a data
   useEffect(() => { buscarAgendamentos() }, [dataAtual])
+
+  // Busca se é admin apenas uma vez ao carregar
+  useEffect(() => { checkAdmin() }, [])
+
+  async function checkAdmin() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+        const { data } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
+        if (data?.is_admin) setIsAdmin(true)
+    }
+  }
 
   const iniciarTutorialGeral = () => {
     const driverObj = driver({
@@ -258,10 +273,18 @@ export default function Agenda() {
       {/* BOTÕES FLUTUANTES (FAB) - ORGANIZADOS */}
       <div style={{ position: 'fixed', bottom: '20px', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', pointerEvents: 'none', zIndex: 20 }}>
 
-        {/* Esquerda: Sair */}
-        <button id='btn-logout' onClick={handleLogout} style={{ pointerEvents: 'auto', width: '45px', height: '45px', borderRadius: '50%', background: 'white', color: '#ef4444', border: '1px solid #ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-          <LogOut size={20} />
-        </button>
+        {/* Esquerda: Grupo Admin + Sair */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', pointerEvents: 'auto' }}>
+            {isAdmin && (
+                <Link to="/admin" style={{ width: '45px', height: '45px', borderRadius: '50%', background: '#1e293b', color: 'white', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.3)' }}>
+                    <ShieldCheck size={20} />
+                </Link>
+            )}
+
+            <button id='btn-logout' onClick={handleLogout} style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'white', color: '#ef4444', border: '1px solid #ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+                <LogOut size={20} />
+            </button>
+        </div>
 
         {/* Direita: Grupo Ajuda + Novo */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', pointerEvents: 'auto' }}>

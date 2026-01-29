@@ -1,39 +1,44 @@
 // src/pages/Bloqueado.jsx
-import { ShieldAlert, MessageCircle } from 'lucide-react'
+import { ShieldAlert, Clock, MessageCircle } from 'lucide-react'
 
 export default function Bloqueado() {
   const abrirSuporte = () => {
-    // Coloque SEU número aqui para ela chorar as pitangas
-    window.open(`https://wa.me/5516996097901?text=${encodeURIComponent("Olá, meu acesso está suspenso. Poderia verificar?")}`, '_blank')
+    // SEU NÚMERO AQUI
+    window.open(`https://wa.me/5516996097901?text=${encodeURIComponent("Olá, acabei de me cadastrar no sistema. Poderia liberar meu acesso?")}`, '_blank')
   }
 
   return (
-    <div style={{ height: '100vh', background: '#fef2f2', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+    <div style={{ height: '100vh', background: '#f0f9ff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center', fontFamily: 'sans-serif' }}>
       
-      <div style={{ background: '#fff', padding: '40px', borderRadius: '20px', boxShadow: '0 10px 25px rgba(220, 38, 38, 0.15)', maxWidth: '400px', border: '1px solid #fee2e2' }}>
+      <div style={{ background: '#fff', padding: '40px', borderRadius: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', maxWidth: '400px', width:'100%' }}>
         
-        <div style={{ background: '#fee2e2', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-          <ShieldAlert size={40} color="#dc2626" />
+        <div style={{ background: '#e0f2fe', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <Clock size={40} color="#0284c7" />
         </div>
 
-        <h1 style={{ color: '#991b1b', margin: '0 0 10px 0', fontSize: '24px' }}>Acesso Suspenso</h1>
+        <h1 style={{ color: '#0369a1', margin: '0 0 10px 0', fontSize: '24px' }}>Cadastro em Análise</h1>
         
-        <p style={{ color: '#7f1d1d', lineHeight: '1.6', marginBottom: '30px' }}>
-          Identificamos uma pendência ou irregularidade na sua conta. Por segurança, o acesso ao sistema foi temporariamente bloqueado.
+        <p style={{ color: '#64748b', lineHeight: '1.6', marginBottom: '30px' }}>
+          Sua conta foi criada com sucesso! <br/>
+          Por questões de segurança, nosso administrador precisa liberar seu acesso.
         </p>
+
+        <div style={{background:'#f8fafc', padding:'15px', borderRadius:'12px', border:'1px solid #e2e8f0', marginBottom:'25px', fontSize:'14px', color:'#475569'}}>
+            Isso geralmente leva menos de 1 hora.
+        </div>
 
         <button 
           onClick={abrirSuporte}
-          style={{ width: '100%', padding: '15px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
+          style={{ width: '100%', padding: '16px', background: '#0284c7', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', boxShadow:'0 4px 12px rgba(2, 132, 199, 0.3)' }}
         >
-          <MessageCircle size={20} /> Falar com Suporte
+          <MessageCircle size={20} /> Avisar Admin no WhatsApp
         </button>
         
         <button 
           onClick={() => window.location.reload()}
-          style={{ background: 'none', border: 'none', marginTop: '20px', color: '#991b1b', textDecoration: 'underline', cursor: 'pointer', fontSize: '14px' }}
+          style={{ background: 'none', border: 'none', marginTop: '20px', color: '#0369a1', textDecoration: 'underline', cursor: 'pointer', fontSize: '14px' }}
         >
-          Tentar novamente
+          Já fui aprovada? Atualizar
         </button>
       </div>
 
