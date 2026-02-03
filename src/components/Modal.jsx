@@ -1,53 +1,32 @@
 // src/components/Modal.jsx
 import React from 'react'
-import { X, CheckCircle, AlertTriangle, Info } from 'lucide-react'
 
-export default function Modal({ isOpen, onClose, type = 'info', title, message, onConfirm }) {
+export default function Modal({ isOpen, onClose, type, title, message, onConfirm }) {
   if (!isOpen) return null
 
-  // Configuração visual baseada no tipo
-  const configs = {
-    success: { icon: <CheckCircle size={48} color="#16a34a" />, color: '#16a34a', bg: '#dcfce7' },
-    error:   { icon: <AlertTriangle size={48} color="#dc2626" />, color: '#dc2626', bg: '#fee2e2' },
-    confirm: { icon: <AlertTriangle size={48} color="#d97706" />, color: '#d97706', bg: '#fef3c7' },
-    info:    { icon: <Info size={48} color="#2563eb" />,          color: '#2563eb', bg: '#eff6ff' }
-  }
-
-  const current = configs[type] || configs.info
-
+  // Estilos inline simples para garantir funcionamento sem CSS externo
+  const overlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }
+  const box = { background: 'white', padding: '25px', borderRadius: '12px', maxWidth: '400px', width: '90%', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', textAlign: 'center' }
+  const btnGroup = { display: 'flex', gap: '10px', marginTop: '20px', justifyContent: 'center' }
+  const btnBase = { padding: '10px 20px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', flex: 1 }
+  
   return (
-    <div style={overlayStyle}>
-      <div style={modalBoxStyle}>
+    <div style={overlay} onClick={(e) => { if(e.target === e.currentTarget) onClose() }}>
+      <div style={box}>
+        <h3 style={{marginTop: 0, color: type === 'confirm' ? '#dc2626' : '#2563eb'}}>{title}</h3>
+        <p style={{color: '#4b5563', lineHeight: '1.5'}}>{message}</p>
         
-        {/* Ícone Gigante no Topo */}
-        <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ ...iconCircleStyle, background: current.bg }}>
-            {current.icon}
-          </div>
+        <div style={btnGroup}>
+            {/* Se for 'confirm', mostra os dois botões. Se for 'info', só mostra o de fechar/entendi */}
+            {type === 'confirm' ? (
+                <>
+                    <button onClick={onClose} style={{...btnBase, background: '#f3f4f6', color: '#374151'}}>Cancelar</button>
+                    <button onClick={onConfirm} style={{...btnBase, background: '#dc2626', color: 'white'}}>Confirmar</button>
+                </>
+            ) : (
+                <button onClick={onClose} style={{...btnBase, background: '#2563eb', color: 'white'}}>Entendi</button>
+            )}
         </div>
-
-        {/* Título e Mensagem */}
-        <h3 style={{ margin: '0 0 10px 0', color: '#000', fontSize: '22px', textAlign: 'center' }}>{title}</h3>
-        <p style={{ margin: '0 0 25px 0', color: '#555', fontSize: '16px', textAlign: 'center', lineHeight: '1.5' }}>
-          {message}
-        </p>
-
-        {/* Botões de Ação */}
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          {type === 'confirm' ? (
-            <>
-              <button onClick={onClose} style={btnSecondary}>Cancelar</button>
-              <button onClick={() => { onConfirm(); onClose(); }} style={{ ...btnPrimary, background: '#dc2626' }}>
-                Confirmar Exclusão
-              </button>
-            </>
-          ) : (
-            <button onClick={onClose} style={{ ...btnPrimary, background: current.color }}>
-              OK, Entendi
-            </button>
-          )}
-        </div>
-
       </div>
     </div>
   )
