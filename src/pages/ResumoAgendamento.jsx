@@ -13,7 +13,7 @@ export default function ResumoAgendamento() {
     async function fetchAgendamento() {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`*, clients (name, phone), services (name, default_price)`)
+        .select(`*, clients (name, phone), services (name, default_price, duration_minutes)`)
         .eq('id', id)
         .single()
       
@@ -34,7 +34,8 @@ export default function ResumoAgendamento() {
   // Função para Gerar Link do Google Agenda
   const gerarLinkGoogleCalendar = () => {
     const inicio = dataObj.toISOString().replace(/-|:|\.\d\d\d/g, "") // Formato YYYYMMDDTHHMMSSZ
-    const fimObj = new Date(dataObj.getTime() + 60*60*1000) // Assume 1h de duração
+    const duracao = agendamento.services?.duration_minutes ?? 60
+    const fimObj = new Date(dataObj.getTime() + duracao * 60 * 1000)
     const fim = fimObj.toISOString().replace(/-|:|\.\d\d\d/g, "")
     
     const titulo = encodeURIComponent(`Manicure: ${agendamento.services?.name}`)

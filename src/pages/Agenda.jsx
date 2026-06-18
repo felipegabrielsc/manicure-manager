@@ -1,17 +1,23 @@
 // src/pages/Agenda.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ChevronLeft, ChevronRight, Calendar, User, Plus, Scissors, DollarSign, CheckSquare, Square, MessageCircle, Trash2, Clock, X, LogOut, CreditCard, HelpCircle, AlertTriangle, Settings, CheckCircle, Ban, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, User, Plus, Scissors, DollarSign, CheckSquare, Square, MessageCircle, Trash2, Clock, X, LogOut, HelpCircle, AlertTriangle, Settings, CheckCircle, Ban, ShieldCheck, Bell, LayoutGrid, Package, Gift, Users, Crown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
+import { getWeekDays, fetchWeekAppointments, fetchSchedulingContext, validateBookingSlot, getServiceDuration } from '../utils/scheduling'
+import { openSupportWhatsApp } from '../config/app'
 
 export default function Agenda() {
   const [dataAtual, setDataAtual] = useState(new Date())
   const [agendamentos, setAgendamentos] = useState([])
+  const [agendamentosSemana, setAgendamentosSemana] = useState([])
+  const [lembretesPendentes, setLembretesPendentes] = useState([])
+  const [modoSemana, setModoSemana] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [userId, setUserId] = useState(null)
   
   // ESTADO PARA SABER SE É ADMIN
   const [isAdmin, setIsAdmin] = useState(false)
@@ -32,9 +38,14 @@ export default function Agenda() {
 
   // Busca agendamentos quando muda a data
   useEffect(() => { buscarAgendamentos() }, [dataAtual])
+  useEffect(() => { carregarSemana() }, [dataAtual])
+  useEffect(() => { carregarLembretes() }, [])
 
   // Busca se é admin apenas uma vez ao carregar
-  useEffect(() => { checkAdmin() }, [])
+  useEffect(() => {
+    checkAdmin()
+    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id) })
+  }, [])
 
   async function checkAdmin() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -42,6 +53,50 @@ export default function Agenda() {
         const { data } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
         if (data?.is_admin) setIsAdmin(true)
     }
+  }
+
+  async function carregarSemana() {
+    const data = await fetchWeekAppointments(supabase, dataAtual)
+    setAgendamentosSemana(data)
+  }
+
+  async function carregarLembretes() {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data: perfil } = await supabase.from('profiles').select('reminders_enabled, reminder_hours_before').eq('id', user.id).single()
+    if (perfil?.reminders_enabled === false) return
+
+    const horas = perfil?.reminder_hours_before ?? 24
+    const agora = new Date()
+    const limite = new Date(agora.getTime() + horas * 60 * 60 * 1000)
+
+    const { data } = await supabase
+      .from('appointments')
+      .select('*, clients(name, phone), services(name, duration_minutes)')
+      .eq('status', 'AGENDADO')
+      .is('reminder_sent_at', null)
+      .gte('start_time', agora.toISOString())
+      .lte('start_time', limite.toISOString())
+      .order('start_time')
+
+    setLembretesPendentes(data || [])
+  }
+
+  async function enviarLembrete(agendamento) {
+    const tel = agendamento.clients?.phone?.replace(/\D/g, '')
+    if (!tel) return toast.error('Cliente sem telefone')
+
+    const hora = new Date(agendamento.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    const data = new Date(agendamento.start_time).toLocaleDateString('pt-BR')
+    const link = `${window.location.origin}/resumo/${agendamento.id}`
+    const msg = `Olá ${agendamento.clients?.name}! Lembrete do seu horário: ${data} às ${hora}.\nServiço: ${agendamento.services?.name}\nDetalhes: ${link}`
+
+    window.open(`https://wa.me/${tel.startsWith('55') ? tel : `55${tel}`}?text=${encodeURIComponent(msg)}`, '_blank')
+
+    await supabase.from('appointments').update({ reminder_sent_at: new Date().toISOString() }).eq('id', agendamento.id)
+    toast.success('Lembrete enviado!')
+    carregarLembretes()
   }
 
   const iniciarTutorialGeral = () => {
@@ -98,6 +153,12 @@ export default function Agenda() {
     const updateData = { status: novoStatus, payment_method: novoStatus === 'CONCLUIDO' ? metodoPagamento : null }
     const { error } = await supabase.from('appointments').update(updateData).eq('id', id)
     if (!error) {
+      if (novoStatus === 'CONCLUIDO') {
+        const apt = agendamentos.find(a => a.id === id)
+        if (apt?.client_id && userId) {
+          await supabase.rpc('incrementar_fidelidade', { p_client_id: apt.client_id, p_user_id: userId })
+        }
+      }
       setAgendamentos(prev => prev.map(item => item.id === id ? { ...item, status: novoStatus, payment_method: updateData.payment_method } : item))
       if (novoStatus === 'CONCLUIDO') toast.success(`Recebido!`, { icon: '💰' })
       else toast('Reaberto', { icon: '↩️' })
@@ -121,9 +182,24 @@ export default function Agenda() {
   }
 
   const salvarNovaData = async () => {
-    if (!agendamentoSelecionado || !novaDataHora) return
-    const { error } = await supabase.from('appointments').update({ start_time: new Date(novaDataHora).toISOString() }).eq('id', agendamentoSelecionado.id)
-    if (!error) { buscarAgendamentos(); fecharOpcoes(); toast.success('Remarcado!') }
+    if (!agendamentoSelecionado || !novaDataHora || !userId) return
+    const startTime = new Date(novaDataHora)
+    const durationMinutes = getServiceDuration(agendamentoSelecionado.services)
+
+    const ctx = await fetchSchedulingContext(supabase, userId, startTime, agendamentoSelecionado.id)
+    const validation = validateBookingSlot({
+      startTime,
+      durationMinutes,
+      businessHours: ctx.businessHours,
+      appointments: ctx.appointments,
+      blockedSlots: ctx.blockedSlots,
+      excludeAppointmentId: agendamentoSelecionado.id,
+    })
+
+    if (!validation.valid) return toast.error(validation.reason)
+
+    const { error } = await supabase.from('appointments').update({ start_time: startTime.toISOString() }).eq('id', agendamentoSelecionado.id)
+    if (!error) { buscarAgendamentos(); carregarSemana(); fecharOpcoes(); toast.success('Remarcado!') }
     else { toast.error('Erro ao remarcar') }
   }
 
@@ -145,8 +221,12 @@ export default function Agenda() {
     setAlertModal({ isOpen: true, type: 'confirm', title: 'Sair?', message: 'Você terá que fazer login novamente.' })
   }
   const mudarDia = (d) => { const n = new Date(dataAtual); n.setDate(n.getDate() + d); setDataAtual(n) }
+  const mudarSemana = (d) => { const n = new Date(dataAtual); n.setDate(n.getDate() + d * 7); setDataAtual(n) }
+  const irParaDia = (dia) => { setDataAtual(new Date(dia)); setModoSemana(false) }
   const handleModalConfirm = () => { if (acaoConfirmacao) acaoConfirmacao() }
-  const abrirSuporte = () => { window.open(`https://wa.me/5516996097901?text=${encodeURIComponent("Oi, preciso de ajuda!")}`, '_blank') }
+  const abrirSuporte = () => openSupportWhatsApp('Oi, preciso de ajuda!')
+  const diasSemana = getWeekDays(dataAtual)
+  const hojeStr = new Date().toDateString()
 
   return (
     <div style={{ paddingBottom: '100px', maxWidth: '100vw', overflowX: 'hidden' }}>
@@ -215,11 +295,15 @@ export default function Agenda() {
 
         {/* Linha de Ícones */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div id="menu-gestao" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div id="menu-gestao" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <Link to="/clientes" className="btn-nav-top" style={btnNavStyle} title="Clientes"><User size={20} color="#000" /></Link>
             <Link to="/servicos" className="btn-nav-top" style={btnNavStyle} title="Serviços"><Scissors size={20} color="#000" /></Link>
+            <Link to="/estoque" className="btn-nav-top" style={btnNavStyle} title="Estoque"><Package size={18} color="#000" /></Link>
+            <Link to="/fidelidade" className="btn-nav-top" style={btnNavStyle} title="Fidelidade"><Gift size={18} color="#000" /></Link>
+            <Link to="/equipe" className="btn-nav-top" style={btnNavStyle} title="Equipe"><Users size={18} color="#000" /></Link>
           </div>
-          <div id="menu-financeiro" style={{ display: 'flex', gap: '8px' }}>
+          <div id="menu-financeiro" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <Link to="/planos" className="btn-nav-top" style={{ ...btnNavStyle, borderColor: '#7c3aed', color: '#7c3aed', background: '#faf5ff' }} title="Plano"><Crown size={18} /></Link>
             <Link id="menu-config" to="/configuracoes" className="btn-nav-top" style={{ ...btnNavStyle, borderColor: '#64748b', color: '#64748b', background: '#f8fafc' }} title="Configurações"><Settings size={20} /></Link>
             <Link to="/financeiro" className="btn-nav-top" style={{ ...btnNavStyle, borderColor: '#16a34a', color: '#16a34a', background: '#f0fdf4' }} title="Financeiro"><DollarSign size={20} /></Link>
           </div>
@@ -227,23 +311,101 @@ export default function Agenda() {
 
         {/* Navegação de Data */}
         <div id="nav-datas" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', padding: '5px', borderRadius: '12px' }}>
-          <button onClick={() => mudarDia(-1)} style={{ ...btnNavStyle, width: '36px', height: '36px', border: 'none', background: 'transparent' }}><ChevronLeft size={24} color="#666" /></button>
+          <button onClick={() => modoSemana ? mudarSemana(-1) : mudarDia(-1)} style={{ ...btnNavStyle, width: '36px', height: '36px', border: 'none', background: 'transparent' }}><ChevronLeft size={24} color="#666" /></button>
 
           <div style={{ textAlign: 'center', flex: 1, overflow: 'hidden' }}>
-            <span style={{ display: 'block', fontSize: '10px', color: '#999', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>VISUALIZANDO</span>
-            {/* White-space nowrap impede a quebra de linha */}
+            <span style={{ display: 'block', fontSize: '10px', color: '#999', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              {modoSemana ? 'SEMANA' : 'VISUALIZANDO'}
+            </span>
             <h2 className="data-titulo" style={{ margin: 0, fontSize: '18px', color: '#000', textTransform: 'capitalize', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {dataFormatada}
+              {modoSemana
+                ? `${diasSemana[0].toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} - ${diasSemana[6].toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`
+                : dataFormatada}
             </h2>
           </div>
 
-          <button onClick={() => mudarDia(1)} style={{ ...btnNavStyle, width: '36px', height: '36px', border: 'none', background: 'transparent' }}><ChevronRight size={24} color="#666" /></button>
+          <button onClick={() => modoSemana ? mudarSemana(1) : mudarDia(1)} style={{ ...btnNavStyle, width: '36px', height: '36px', border: 'none', background: 'transparent' }}><ChevronRight size={24} color="#666" /></button>
+        </div>
+
+        {/* Faixa semanal + toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+            {diasSemana.map(dia => {
+              const count = agendamentosSemana.filter(a => new Date(a.start_time).toDateString() === dia.toDateString() && a.status !== 'FALTOU').length
+              const isSelected = dia.toDateString() === dataAtual.toDateString()
+              const isToday = dia.toDateString() === hojeStr
+              return (
+                <button
+                  key={dia.toISOString()}
+                  onClick={() => irParaDia(dia)}
+                  style={{
+                    padding: '6px 2px', borderRadius: '10px', border: isSelected ? '2px solid #2563eb' : '1px solid #e5e7eb',
+                    background: isSelected ? '#eff6ff' : 'white', cursor: 'pointer', textAlign: 'center',
+                  }}
+                >
+                  <span style={{ display: 'block', fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>
+                    {dia.toLocaleDateString('pt-BR', { weekday: 'narrow' })}
+                  </span>
+                  <strong style={{ fontSize: '14px', color: isToday ? '#2563eb' : '#1f2937' }}>{dia.getDate()}</strong>
+                  {count > 0 && <span style={{ display: 'block', width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a', margin: '2px auto 0' }} />}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            onClick={() => setModoSemana(!modoSemana)}
+            title={modoSemana ? 'Ver dia' : 'Ver semana'}
+            style={{ ...btnNavStyle, borderColor: modoSemana ? '#2563eb' : '#e5e7eb', color: modoSemana ? '#2563eb' : '#64748b' }}
+          >
+            <LayoutGrid size={18} />
+          </button>
         </div>
       </div>
+
+      {/* LEMBRETES PENDENTES */}
+      {lembretesPendentes.length > 0 && (
+        <div style={{ padding: '12px 15px', maxWidth: '600px', margin: '0 auto' }}>
+          <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: '12px', padding: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', color: '#b45309', fontWeight: 'bold', fontSize: '14px' }}>
+              <Bell size={16} /> {lembretesPendentes.length} lembrete(s) pendente(s)
+            </div>
+            {lembretesPendentes.slice(0, 3).map(l => (
+              <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #fde68a', fontSize: '13px' }}>
+                <span>{l.clients?.name} · {new Date(l.start_time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                <button onClick={() => enviarLembrete(l)} style={{ background: '#25D366', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>WhatsApp</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* LISTA */}
       <div style={{ padding: '15px', maxWidth: '600px', margin: '0 auto' }}>
         {loading ? <div style={{ textAlign: 'center', marginTop: '40px', color: '#999' }}>Carregando agenda...</div> :
+          modoSemana ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {diasSemana.map(dia => {
+                const items = agendamentosSemana.filter(a => new Date(a.start_time).toDateString() === dia.toDateString())
+                return (
+                  <div key={dia.toISOString()}>
+                    <h3 style={{ fontSize: '14px', color: '#64748b', textTransform: 'capitalize', margin: '0 0 8px', cursor: 'pointer' }} onClick={() => irParaDia(dia)}>
+                      {dia.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'short' })}
+                    </h3>
+                    {items.length === 0 ? (
+                      <p style={{ fontSize: '13px', color: '#cbd5e1', margin: 0 }}>Sem agendamentos</p>
+                    ) : (
+                      items.map(item => (
+                        <div key={item.id} onClick={() => irParaDia(dia)} style={{ padding: '10px', background: 'white', borderRadius: '8px', marginBottom: '6px', border: '1px solid #e5e7eb', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
+                          <span><strong>{new Date(item.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong> · {item.clients?.name}</span>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>{item.services?.name}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) :
           agendamentos.length === 0 ? (
             <div style={{ textAlign: 'center', marginTop: '60px' }}>
               <Calendar size={64} color="#e5e7eb" />
@@ -259,6 +421,7 @@ export default function Agenda() {
                   onToggle={() => handleToggleClick(item)}
                   onOpenOptions={() => abrirOpcoes(item)}
                   onTutorial={() => iniciarTutorialCard(item)}
+                  onRefresh={() => { buscarAgendamentos(); carregarSemana() }}
                 />
               ))}
             </div>
@@ -302,7 +465,7 @@ export default function Agenda() {
   )
 }
 
-function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial }) {
+function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onRefresh }) {
   const hora = new Date(agendamento.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   const isMensalista = agendamento.clients?.type === 'MENSALISTA'
   const isConcluido = agendamento.status === 'CONCLUIDO'
@@ -312,14 +475,14 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial }) {
   const aprovarAgendamento = async (e) => {
     e.stopPropagation()
     const { error } = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
-    if (!error) { toast.success('Confirmado!', { icon: '✅' }); window.location.reload(); }
+    if (!error) { toast.success('Confirmado!', { icon: '✅' }); onRefresh?.() }
   }
 
   const recusarAgendamento = async (e) => {
     e.stopPropagation()
     if (!window.confirm("Recusar solicitação?")) return;
     const { error } = await supabase.from('appointments').delete().eq('id', agendamento.id)
-    if (!error) { toast('Recusado', { icon: '🗑️' }); window.location.reload(); }
+    if (!error) { toast('Recusado', { icon: '🗑️' }); onRefresh?.() }
   }
 
   const abrirWhatsapp = (e) => {

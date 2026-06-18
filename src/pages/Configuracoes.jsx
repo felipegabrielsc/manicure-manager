@@ -1,7 +1,8 @@
 // src/pages/Configuracoes.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, Copy, Save, Clock, Globe, User, Lock, Unlock, Loader2, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Copy, Save, Clock, Globe, User, Lock, Unlock, Loader2, HelpCircle, Bell, Ban, Trash2, ExternalLink, Smartphone } from 'lucide-react'
+import { subscribeToPush, unsubscribePush, requestNotificationPermission } from '../utils/notifications'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
@@ -14,8 +15,20 @@ export default function Configuracoes() {
   
   const [nomeNegocio, setNomeNegocio] = useState('')
   const [meuWhatsapp, setMeuWhatsapp] = useState('')
-  const [agendamentoAtivo, setAgendamentoAtivo] = useState(null) 
+  const [bio, setBio] = useState('')
+  const [endereco, setEndereco] = useState('')
+  const [instagram, setInstagram] = useState('')
+  const [perfilPublicoAtivo, setPerfilPublicoAtivo] = useState(true)
+  const [lembretesAtivos, setLembretesAtivos] = useState(true)
+  const [horasLembrete, setHorasLembrete] = useState(24)
+  const [pushAtivo, setPushAtivo] = useState(false)
+  const [agendamentoAtivo, setAgendamentoAtivo] = useState(null)
   const [horarios, setHorarios] = useState([])
+  const [bloqueios, setBloqueios] = useState([])
+  const [bloqueioData, setBloqueioData] = useState('')
+  const [bloqueioInicio, setBloqueioInicio] = useState('')
+  const [bloqueioFim, setBloqueioFim] = useState('')
+  const [bloqueioMotivo, setBloqueioMotivo] = useState('')
   
   const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
@@ -43,6 +56,13 @@ export default function Configuracoes() {
     if (perfil) {
         setNomeNegocio(perfil.business_name || '')
         setMeuWhatsapp(perfil.whatsapp || '')
+        setBio(perfil.bio || '')
+        setEndereco(perfil.address || '')
+        setInstagram(perfil.instagram || '')
+        setPerfilPublicoAtivo(perfil.public_profile_active !== false)
+        setLembretesAtivos(perfil.reminders_enabled !== false)
+        setHorasLembrete(perfil.reminder_hours_before ?? 24)
+        setPushAtivo(perfil.push_enabled === true)
         setAgendamentoAtivo(perfil.booking_active === false ? false : true)
     } else {
         await supabase.from('profiles').insert({ id: user.id, booking_active: true })
@@ -57,6 +77,15 @@ export default function Configuracoes() {
         else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', is_closed: i === 0, user_id: user.id })
     }
     setHorarios(hoursMap)
+
+    const { data: slots } = await supabase
+      .from('blocked_slots')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('start_time', new Date().toISOString())
+      .order('start_time')
+
+    setBloqueios(slots || [])
     setLoading(false)
   }
 
@@ -91,17 +120,86 @@ export default function Configuracoes() {
   async function salvarDadosGerais() {
     const user = (await supabase.auth.getUser()).data.user
     const { error: errPerfil } = await supabase.from('profiles').upsert({
-        id: user.id, business_name: nomeNegocio, whatsapp: meuWhatsapp.replace(/\D/g, ''), booking_active: agendamentoAtivo 
+        id: user.id,
+        business_name: nomeNegocio,
+        whatsapp: meuWhatsapp.replace(/\D/g, ''),
+        bio,
+        address: endereco,
+        instagram: instagram.replace('@', ''),
+        public_profile_active: perfilPublicoAtivo,
+        reminders_enabled: lembretesAtivos,
+        reminder_hours_before: parseInt(horasLembrete, 10) || 24,
+        booking_active: agendamentoAtivo,
     })
-    const dadosHorarios = horarios.map(({ id, ...rest }) => rest)
+    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, is_closed, user_id }) => ({
+      day_of_week, open_time, close_time, is_closed, user_id,
+    }))
     const { error: errHorario } = await supabase.from('business_hours').upsert(dadosHorarios, { onConflict: 'user_id, day_of_week' })
     if (errPerfil || errHorario) toast.error('Erro ao salvar')
     else toast.success('Dados atualizados!')
   }
 
+  async function togglePush() {
+    if (!userId) return
+    if (pushAtivo) {
+      await unsubscribePush(userId)
+      setPushAtivo(false)
+      toast('Notificações desativadas')
+    } else {
+      const ok = await subscribeToPush(userId)
+      if (ok) {
+        setPushAtivo(true)
+        toast.success('Notificações ativadas!')
+      } else {
+        const perm = await requestNotificationPermission()
+        if (perm === 'denied') toast.error('Permissão negada nas configurações do navegador')
+        else toast.error('Não foi possível ativar. Instale o app (PWA) e tente novamente.')
+      }
+    }
+  }
+
   const copiarLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/agendar/${userId}`)
-    toast.success('Link copiado!')
+    toast.success('Link de agendamento copiado!')
+  }
+
+  const copiarLinkPerfil = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/perfil/${userId}`)
+    toast.success('Link do perfil copiado!')
+  }
+
+  async function adicionarBloqueio() {
+    if (!bloqueioData || !bloqueioInicio || !bloqueioFim) return toast.error('Preencha data e horários.')
+    const start = new Date(`${bloqueioData}T${bloqueioInicio}:00`)
+    const end = new Date(`${bloqueioData}T${bloqueioFim}:00`)
+    if (end <= start) return toast.error('Horário final deve ser depois do inicial.')
+
+    const { error } = await supabase.from('blocked_slots').insert({
+      user_id: userId,
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      reason: bloqueioMotivo || null,
+    })
+
+    if (error) {
+      toast.error('Erro ao bloquear. Execute a migration SQL se ainda não fez.')
+    } else {
+      toast.success('Horário bloqueado!')
+      setBloqueioData('')
+      setBloqueioInicio('')
+      setBloqueioFim('')
+      setBloqueioMotivo('')
+      carregarDados()
+    }
+  }
+
+  async function removerBloqueio(id) {
+    const { error } = await supabase.from('blocked_slots').delete().eq('id', id)
+    if (error) toast.error('Erro ao remover bloqueio')
+    else {
+      toast.success('Bloqueio removido')
+      setBloqueios(prev => prev.filter(b => b.id !== id))
+    }
   }
 
   if (loading) return <div style={{padding:'20px'}}>Carregando...</div>
@@ -176,7 +274,63 @@ export default function Configuracoes() {
                     <label style={{fontSize:'12px', fontWeight:'bold'}}>Seu WhatsApp</label>
                     <input placeholder="(00) 00000-0000" value={meuWhatsapp} onChange={handlePhoneChange} style={inputStyle} />
                 </div>
+                <div>
+                    <label style={{fontSize:'12px', fontWeight:'bold'}}>Sobre o negócio (bio)</label>
+                    <textarea placeholder="Ex: Especialista em alongamento..." value={bio} onChange={e => setBio(e.target.value)} rows={3} style={{...inputStyle, resize:'vertical'}} />
+                </div>
+                <div>
+                    <label style={{fontSize:'12px', fontWeight:'bold'}}>Endereço</label>
+                    <input placeholder="Rua, bairro, cidade" value={endereco} onChange={e => setEndereco(e.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                    <label style={{fontSize:'12px', fontWeight:'bold'}}>Instagram</label>
+                    <input placeholder="@seuinstagram" value={instagram} onChange={e => setInstagram(e.target.value)} style={inputStyle} />
+                </div>
             </div>
+        </div>
+
+        {/* PERFIL PÚBLICO */}
+        <div id="card-perfil-publico" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0, color: '#7c3aed', display:'flex', alignItems:'center', gap:'10px' }}><Globe size={20}/> Página Pública</h3>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                <input readOnly value={`${window.location.origin}/perfil/${userId}`} style={{ flex: 1, background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '10px', borderRadius: '8px', color: '#666', minWidth: 0, fontSize:'12px' }} />
+                <button onClick={copiarLinkPerfil} style={{ background: '#7c3aed', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' }}><Copy size={20} /></button>
+                <a href={`/perfil/${userId}`} target="_blank" rel="noreferrer" style={{ background: '#f3e8ff', color: '#7c3aed', border: 'none', borderRadius: '8px', padding: '0 12px', display:'flex', alignItems:'center' }}><ExternalLink size={18}/></a>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={perfilPublicoAtivo} onChange={e => setPerfilPublicoAtivo(e.target.checked)} />
+                Perfil público visível
+            </label>
+        </div>
+
+        {/* LEMBRETES */}
+        <div id="card-lembretes" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0, color: '#d97706', display:'flex', alignItems:'center', gap:'10px' }}><Bell size={20}/> Lembretes</h3>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginBottom: '12px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={lembretesAtivos} onChange={e => setLembretesAtivos(e.target.checked)} />
+                Ativar lembretes na agenda
+            </label>
+            <div>
+                <label style={{fontSize:'12px', fontWeight:'bold'}}>Avisar quantas horas antes?</label>
+                <select value={horasLembrete} onChange={e => setHorasLembrete(e.target.value)} style={inputStyle}>
+                    <option value="12">12 horas</option>
+                    <option value="24">24 horas</option>
+                    <option value="48">48 horas</option>
+                </select>
+            </div>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>Na agenda, você verá clientes que precisam de lembrete e poderá enviar via WhatsApp.</p>
+        </div>
+
+        {/* PUSH NOTIFICATIONS */}
+        <div id="card-push" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0, color: '#2563eb', display:'flex', alignItems:'center', gap:'10px' }}><Smartphone size={20}/> Notificações Push</h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 12px' }}>Receba alertas de novas solicitações e lembretes mesmo com o app em segundo plano.</p>
+            <button onClick={togglePush} style={{
+              width: '100%', padding: '14px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer',
+              background: pushAtivo ? '#fee2e2' : '#2563eb', color: pushAtivo ? '#dc2626' : 'white',
+            }}>
+              {pushAtivo ? 'Desativar notificações' : 'Ativar notificações push'}
+            </button>
         </div>
 
         {/* CARD LINK */}
@@ -197,6 +351,34 @@ export default function Configuracoes() {
                     {savingLock ? <Loader2 size={14} className="spin" /> : (agendamentoAtivo ? <><Unlock size={14}/> Bloquear</> : <><Lock size={14}/> Liberar</>)}
                 </button>
             </div>
+        </div>
+
+        {/* BLOQUEIOS PONTUAIS */}
+        <div id="card-bloqueios" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+            <h3 style={{ marginTop: 0, color: '#dc2626', display:'flex', alignItems:'center', gap:'10px' }}><Ban size={20}/> Bloquear Horários</h3>
+            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>Bloqueie almoço, folga ou compromissos sem fechar a agenda inteira.</p>
+            <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
+                <input type="date" value={bloqueioData} onChange={e => setBloqueioData(e.target.value)} style={inputStyle} />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <input type="time" value={bloqueioInicio} onChange={e => setBloqueioInicio(e.target.value)} style={inputStyle} />
+                    <input type="time" value={bloqueioFim} onChange={e => setBloqueioFim(e.target.value)} style={inputStyle} />
+                </div>
+                <input placeholder="Motivo (opcional)" value={bloqueioMotivo} onChange={e => setBloqueioMotivo(e.target.value)} style={inputStyle} />
+                <button type="button" onClick={adicionarBloqueio} style={{ padding: '12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>+ Adicionar bloqueio</button>
+            </div>
+            {bloqueios.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {bloqueios.map(b => (
+                        <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', background: '#fef2f2', borderRadius: '8px', fontSize: '13px' }}>
+                            <span>
+                                {new Date(b.start_time).toLocaleDateString('pt-BR')} · {new Date(b.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - {new Date(b.end_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                {b.reason && ` · ${b.reason}`}
+                            </span>
+                            <button onClick={() => removerBloqueio(b.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={16}/></button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
 
         {/* CARD HORÁRIOS RESPONSIVO */}

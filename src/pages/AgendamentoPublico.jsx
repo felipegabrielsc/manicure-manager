@@ -2,206 +2,309 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
-import { Calendar, Clock, User, Scissors, Phone, Send, CheckCircle, Lock } from 'lucide-react'
+import { Clock, User, Scissors, Phone, Send, CheckCircle, Lock, Calendar } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
+import {
+  fetchSchedulingContext,
+  generateAvailableSlots,
+  validateBookingSlot,
+  getServiceDuration,
+} from '../utils/scheduling'
+import { calcularDesconto } from '../utils/exportReport'
 
 export default function AgendamentoPublico() {
   const { userId } = useParams()
-  
-  const [etapa, setEtapa] = useState(1) 
-  const [loading, setLoading] = useState(false)
-  
-  // ESTADO INICIAL: NULL (Significa "Não sei ainda", então não mostra nada)
-  const [agendaAberta, setAgendaAberta] = useState(null) 
 
-  // Dados do Sistema
+  const [etapa, setEtapa] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [agendaAberta, setAgendaAberta] = useState(null)
+
   const [servicos, setServicos] = useState([])
   const [manicurePhone, setManicurePhone] = useState('')
+  const [businessName, setBusinessName] = useState('')
   const [codigoValidacao, setCodigoValidacao] = useState('')
 
-  // Form
   const [nome, setNome] = useState('')
   const [phone, setPhone] = useState('')
   const [servicoId, setServicoId] = useState('')
   const [data, setData] = useState('')
-  const [hora, setHora] = useState('')
+  const [horaSelecionada, setHoraSelecionada] = useState('')
+  const [cupomCodigo, setCupomCodigo] = useState('')
+  const [cupomValidado, setCupomValidado] = useState(null)
+  const [slotsDisponiveis, setSlotsDisponiveis] = useState([])
+  const [carregandoSlots, setCarregandoSlots] = useState(false)
 
   useEffect(() => {
     async function init() {
-        try {
-            // 1. VERIFICAÇÃO DE SEGURANÇA (TRAVA)
-            const { data: perfil, error } = await supabase
-                .from('profiles')
-                .select('whatsapp, booking_active')
-                .eq('id', userId)
-                .single()
-            
-            // Se der erro ou booking_active for explicitamente false, BLOQUEIA
-            if (error || (perfil && perfil.booking_active === false)) {
-                setAgendaAberta(false)
-                return // Para tudo aqui.
-            }
+      try {
+        const { data: perfil, error } = await supabase
+          .from('profiles')
+          .select('whatsapp, booking_active, business_name')
+          .eq('id', userId)
+          .single()
 
-            // Se chegou aqui, está aberto
-            setAgendaAberta(true)
-            setManicurePhone(perfil?.whatsapp || '')
-
-            // 2. CARREGA SERVIÇOS
-            const { data: s } = await supabase.from('services').select('*').eq('user_id', userId)
-            setServicos(s || [])
-            setCodigoValidacao(Math.floor(1000 + Math.random() * 9000).toString())
-
-        } catch (err) {
-            console.error(err)
-            setAgendaAberta(false) // Na dúvida, bloqueia
+        if (error || (perfil && perfil.booking_active === false)) {
+          setAgendaAberta(false)
+          return
         }
+
+        setAgendaAberta(true)
+        setManicurePhone(perfil?.whatsapp || '')
+        setBusinessName(perfil?.business_name || 'Manicure')
+
+        const { data: s } = await supabase.from('services').select('*').eq('user_id', userId)
+        setServicos(s || [])
+        setCodigoValidacao(Math.floor(1000 + Math.random() * 9000).toString())
+      } catch (err) {
+        console.error(err)
+        setAgendaAberta(false)
+      }
     }
     init()
   }, [userId])
 
+  useEffect(() => {
+    if (!data || !servicoId || !userId) {
+      setSlotsDisponiveis([])
+      setHoraSelecionada('')
+      return
+    }
+
+    async function loadSlots() {
+      setCarregandoSlots(true)
+      const servico = servicos.find(s => s.id == servicoId)
+      const durationMinutes = getServiceDuration(servico)
+      const dateObj = new Date(`${data}T12:00:00`)
+
+      const ctx = await fetchSchedulingContext(supabase, userId, dateObj)
+      const slots = generateAvailableSlots({
+        date: dateObj,
+        durationMinutes,
+        businessHours: ctx.businessHours,
+        appointments: ctx.appointments,
+        blockedSlots: ctx.blockedSlots,
+      })
+
+      setSlotsDisponiveis(slots)
+      setHoraSelecionada('')
+      setCarregandoSlots(false)
+    }
+
+    loadSlots()
+  }, [data, servicoId, userId, servicos])
+
   const handlePhone = (e) => {
-    let v = e.target.value.replace(/\D/g,'').slice(0,11)
-    if(v.length>2) v = `(${v.slice(0,2)}) ${v.slice(2)}`
-    if(v.length>9) v = `${v.slice(0,10)}-${v.slice(10)}`
+    let v = e.target.value.replace(/\D/g, '').slice(0, 11)
+    if (v.length > 2) v = `(${v.slice(0, 2)}) ${v.slice(2)}`
+    if (v.length > 9) v = `${v.slice(0, 10)}-${v.slice(10)}`
     setPhone(v)
   }
 
-  // --- ETAPA 1: VALIDAR REGRAS ---
   async function avancarParaValidacao(e) {
     e.preventDefault()
-    if (!nome || !phone || !servicoId || !data || !hora) return toast.error('Preencha tudo')
+    if (!nome || !phone || !servicoId || !data || !horaSelecionada) return toast.error('Preencha tudo e escolha um horário')
     if (phone.length < 14) return toast.error('WhatsApp inválido')
 
     setLoading(true)
-    
-    // --- BLINDAGEM EXTRA: CHECA A TRAVA DE NOVO ---
-    // Vai que a manicure bloqueou enquanto a cliente preenchia o form?
+
     const { data: perfilCheck } = await supabase.from('profiles').select('booking_active').eq('id', userId).single()
     if (perfilCheck && perfilCheck.booking_active === false) {
-        setLoading(false)
-        setAgendaAberta(false) // Derruba a cliente para a tela de bloqueio
-        return toast.error("A agenda acabou de ser fechada pela profissional.")
+      setLoading(false)
+      setAgendaAberta(false)
+      return toast.error('A agenda acabou de ser fechada pela profissional.')
     }
 
-    // VERIFICAR DISPONIBILIDADE (SPAM/LISTA NEGRA)
+    const servico = servicos.find(s => s.id == servicoId)
+    const startTime = new Date(horaSelecionada)
+    const ctx = await fetchSchedulingContext(supabase, userId, startTime)
+    const validation = validateBookingSlot({
+      startTime,
+      durationMinutes: getServiceDuration(servico),
+      businessHours: ctx.businessHours,
+      appointments: ctx.appointments,
+      blockedSlots: ctx.blockedSlots,
+    })
+
+    if (!validation.valid) {
+      setLoading(false)
+      return toast.error(validation.reason)
+    }
+
+    if (cupomCodigo) {
+      const { data: cupom } = await supabase.rpc('validar_cupom', { p_user_id: userId, p_code: cupomCodigo })
+      if (!cupom?.valid) {
+        setLoading(false)
+        return toast.error(cupom?.reason || 'Cupom inválido')
+      }
+      setCupomValidado(cupom)
+    } else {
+      setCupomValidado(null)
+    }
+
     try {
-        const { data: check, error: rpcError } = await supabase.rpc('verificar_disponibilidade', { telefone_cliente: phone })
-        
-        if (rpcError) { console.error(rpcError); throw new Error('Erro conexão'); }
+      const { data: check, error: rpcError } = await supabase.rpc('verificar_disponibilidade', { telefone_cliente: phone })
 
-        if (check && !check.pode_agendar) {
-            setLoading(false)
-            return toast.error(check.motivo === 'BANIDO' ? 'Contate a manicure.' : 'Você já tem um agendamento pendente.')
-        }
+      if (rpcError) {
+        console.error(rpcError)
+        throw new Error('Erro conexão')
+      }
 
+      if (check && !check.pode_agendar) {
         setLoading(false)
-        setEtapa(2)
-    } catch (err) {
-        setLoading(false)
-        toast.error('Erro ao verificar.')
+        return toast.error(check.motivo === 'BANIDO' ? 'Contate a manicure.' : 'Você já tem um agendamento pendente.')
+      }
+
+      setLoading(false)
+      setEtapa(2)
+    } catch {
+      setLoading(false)
+      toast.error('Erro ao verificar.')
     }
   }
 
-  // --- ETAPA 2: FINALIZAR ---
   async function finalizarAgendamento() {
     setLoading(true)
-    const dataFinal = new Date(`${data}T${hora}:00`)
-    const preco = servicos.find(s => s.id == servicoId)?.default_price
+    const dataFinal = new Date(horaSelecionada)
+    const servico = servicos.find(s => s.id == servicoId)
+    const precoBase = servico?.default_price || 0
+    const desconto = cupomValidado ? calcularDesconto(precoBase, cupomValidado.discount_type, cupomValidado.discount_value) : 0
+    const preco = Math.max(0, precoBase - desconto)
 
     let clienteId = null
     const phoneClean = phone.replace(/\D/g, '')
     const { data: cliExistente } = await supabase.from('clients').select('id').eq('user_id', userId).ilike('phone', `%${phoneClean}%`).maybeSingle()
+
     if (cliExistente) clienteId = cliExistente.id
     else {
-        const { data: novo } = await supabase.from('clients').insert({ name: nome, phone: phone, type: 'AVULSO', user_id: userId }).select().single()
-        clienteId = novo?.id
+      const { data: novo } = await supabase.from('clients').insert({ name: nome, phone: phone, type: 'AVULSO', user_id: userId }).select().single()
+      clienteId = novo?.id
     }
 
     const { error } = await supabase.from('appointments').insert({
-        client_id: clienteId,
-        service_id: servicoId,
-        start_time: dataFinal.toISOString(),
-        agreed_price: preco,
-        status: 'PENDENTE',
-        user_id: userId
+      client_id: clienteId,
+      service_id: servicoId,
+      start_time: dataFinal.toISOString(),
+      agreed_price: preco,
+      status: 'PENDENTE',
+      user_id: userId,
+      coupon_id: cupomValidado?.coupon_id || null,
+      discount_applied: desconto,
     })
 
-    if (error) { toast.error('Erro'); setLoading(false); }
-    else {
-        const msg = `Olá, sou *${nome}*! Solicitei um horário pelo site.\n📅 *${new Date(dataFinal).toLocaleDateString('pt-BR')} às ${hora}*\nCódigo: *${codigoValidacao}*`
-        const link = `https://wa.me/55${manicurePhone}?text=${encodeURIComponent(msg)}`
-        window.open(link, '_blank')
-        setEtapa(3)
+    if (!error && cupomValidado?.coupon_id) {
+      const { data: cup } = await supabase.from('coupons').select('uses_count').eq('id', cupomValidado.coupon_id).single()
+      await supabase.from('coupons').update({ uses_count: (cup?.uses_count || 0) + 1 }).eq('id', cupomValidado.coupon_id)
+    }
+
+    if (error) {
+      toast.error('Erro ao agendar')
+      setLoading(false)
+    } else {
+      const horaLabel = dataFinal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      const msg = `Olá, sou *${nome}*! Solicitei um horário pelo site.\n📅 *${dataFinal.toLocaleDateString('pt-BR')} às ${horaLabel}*\nCódigo: *${codigoValidacao}*`
+      window.open(`https://wa.me/55${manicurePhone}?text=${encodeURIComponent(msg)}`, '_blank')
+      setEtapa(3)
     }
   }
 
-  // 1. TELA DE CARREGAMENTO (Enquanto decide se abre ou fecha)
-  if (agendaAberta === null) return (
-      <div style={{minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', color:'#666'}}>
-          Carregando agenda...
-      </div>
-  )
+  const minDate = new Date().toISOString().split('T')[0]
 
-  // 2. TELA DE BLOQUEIO
-  if (agendaAberta === false) return (
-    <div style={{ minHeight:'100vh', background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px', fontFamily:'sans-serif' }}>
-        <div style={{ background:'white', padding:'40px', borderRadius:'16px', textAlign:'center', boxShadow:'0 4px 20px rgba(0,0,0,0.05)', maxWidth:'400px' }}>
-            <div style={{background:'#fee2e2', width:'80px', height:'80px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px'}}>
-                <Lock size={40} color="#dc2626"/>
-            </div>
-            <h2 style={{color:'#991b1b', margin:'0 0 10px 0'}}>Agenda Fechada</h2>
-            <p style={{color:'#666', lineHeight:'1.5'}}>
-                No momento não estamos recebendo novos agendamentos pelo site. Por favor, entre em contato diretamente pelo WhatsApp.
-            </p>
+  if (agendaAberta === null) {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>Carregando agenda...</div>
+  }
+
+  if (agendaAberta === false) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
+        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', maxWidth: '400px' }}>
+          <div style={{ background: '#fee2e2', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <Lock size={40} color="#dc2626" />
+          </div>
+          <h2 style={{ color: '#991b1b', margin: '0 0 10px 0' }}>Agenda Fechada</h2>
+          <p style={{ color: '#666', lineHeight: '1.5' }}>No momento não estamos recebendo novos agendamentos pelo site.</p>
         </div>
-    </div>
-  )
+      </div>
+    )
+  }
 
-  // 3. TELA DE SUCESSO
-  if (etapa === 3) return (
-    <div style={{ textAlign: 'center', padding: '50px 20px', fontFamily: 'sans-serif' }}>
-        <CheckCircle size={80} color="#16a34a" style={{margin:'0 auto'}}/>
-        <h1 style={{color:'#16a34a'}}>Solicitação Enviada!</h1>
+  if (etapa === 3) {
+    return (
+      <div style={{ textAlign: 'center', padding: '50px 20px', fontFamily: 'sans-serif' }}>
+        <CheckCircle size={80} color="#16a34a" style={{ margin: '0 auto' }} />
+        <h1 style={{ color: '#16a34a' }}>Solicitação Enviada!</h1>
         <p>Aguarde a confirmação no WhatsApp.</p>
-    </div>
-  )
+      </div>
+    )
+  }
 
-  // 4. FORMULÁRIO (Só aparece se agendaAberta === true)
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif' }}>
       <Toaster position="top-center" />
       <div style={{ maxWidth: '500px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
         <div style={{ background: '#2563eb', padding: '20px', color: 'white', textAlign: 'center' }}>
-            <h2 style={{ margin: 0 }}>Agendar Horário</h2>
+          <h2 style={{ margin: 0 }}>Agendar com {businessName}</h2>
         </div>
 
         {etapa === 1 ? (
-            <form onSubmit={avancarParaValidacao} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div><label style={lbl}><User size={16}/> Seu Nome</label><input required value={nome} onChange={e => setNome(e.target.value)} style={inp} placeholder="Nome Completo"/></div>
-                <div><label style={lbl}><Phone size={16}/> Seu WhatsApp</label><input required value={phone} onChange={handlePhone} style={inp} placeholder="(00) 00000-0000" inputMode="numeric"/></div>
-                <div><label style={lbl}><Scissors size={16}/> Serviço</label>
-                    <select required value={servicoId} onChange={e => setServicoId(e.target.value)} style={inp}>
-                        <option value="">Selecione...</option>
-                        {servicos.map(s => <option key={s.id} value={s.id}>{s.name} - R$ {s.default_price}</option>)}
-                    </select>
-                </div>
-                <div><label style={lbl}><Clock size={16}/> Data e Hora</label>
-                    <div style={{display:'flex', gap:'10px'}}>
-                        <input required type="date" value={data} onChange={e => setData(e.target.value)} style={inp} />
-                        <input required type="time" value={hora} onChange={e => setHora(e.target.value)} style={inp} />
-                    </div>
-                </div>
-                <button type="submit" disabled={loading} style={btn}>{loading ? 'Verificando...' : 'Continuar'}</button>
-            </form>
-        ) : (
-            <div style={{ padding: '30px 20px', textAlign: 'center' }}>
-                <h3 style={{ color: '#b45309' }}>Quase lá!</h3>
-                <p style={{ color: '#666', marginBottom: '30px' }}>Para confirmar que este número é seu, envie o código abaixo para a manicure.</p>
-                <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', letterSpacing: '5px', color: '#d97706', marginBottom: '30px' }}>{codigoValidacao}</div>
-                <button onClick={finalizarAgendamento} style={{ ...btn, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                    <Send size={20}/> Confirmar no WhatsApp
-                </button>
+          <form onSubmit={avancarParaValidacao} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div><label style={lbl}><User size={16} /> Seu Nome</label><input required value={nome} onChange={e => setNome(e.target.value)} style={inp} placeholder="Nome Completo" /></div>
+            <div><label style={lbl}><Phone size={16} /> Seu WhatsApp</label><input required value={phone} onChange={handlePhone} style={inp} placeholder="(00) 00000-0000" inputMode="numeric" /></div>
+            <div><label style={lbl}><Scissors size={16} /> Serviço</label>
+              <select required value={servicoId} onChange={e => setServicoId(e.target.value)} style={inp}>
+                <option value="">Selecione...</option>
+                {servicos.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} - R$ {s.default_price} ({getServiceDuration(s)} min)</option>
+                ))}
+              </select>
             </div>
+            <div>
+              <label style={lbl}><Calendar size={16} /> Data</label>
+              <input required type="date" min={minDate} value={data} onChange={e => setData(e.target.value)} style={inp} />
+            </div>
+            <div>
+              <label style={lbl}>Cupom (opcional)</label>
+              <input placeholder="Código promocional" value={cupomCodigo} onChange={e => setCupomCodigo(e.target.value.toUpperCase())} style={inp} />
+            </div>
+            {data && servicoId && (
+              <div>
+                <label style={lbl}><Clock size={16} /> Horários disponíveis</label>
+                {carregandoSlots ? (
+                  <p style={{ color: '#64748b', fontSize: '14px' }}>Carregando horários...</p>
+                ) : slotsDisponiveis.length === 0 ? (
+                  <p style={{ color: '#dc2626', fontSize: '14px' }}>Nenhum horário livre nesta data. Escolha outro dia.</p>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    {slotsDisponiveis.map(slot => (
+                      <button
+                        key={slot.value}
+                        type="button"
+                        onClick={() => setHoraSelecionada(slot.value)}
+                        style={{
+                          padding: '10px 6px', borderRadius: '8px', border: horaSelecionada === slot.value ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          background: horaSelecionada === slot.value ? '#eff6ff' : 'white',
+                          color: '#1e293b', fontWeight: horaSelecionada === slot.value ? 'bold' : 'normal', cursor: 'pointer', fontSize: '14px',
+                        }}
+                      >
+                        {slot.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <button type="submit" disabled={loading || !horaSelecionada} style={{ ...btn, opacity: loading || !horaSelecionada ? 0.6 : 1 }}>
+              {loading ? 'Verificando...' : 'Continuar'}
+            </button>
+          </form>
+        ) : (
+          <div style={{ padding: '30px 20px', textAlign: 'center' }}>
+            <h3 style={{ color: '#b45309' }}>Quase lá!</h3>
+            <p style={{ color: '#666', marginBottom: '30px' }}>Envie o código abaixo para a manicure no WhatsApp.</p>
+            <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', letterSpacing: '5px', color: '#d97706', marginBottom: '30px' }}>{codigoValidacao}</div>
+            <button onClick={finalizarAgendamento} disabled={loading} style={{ ...btn, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '0 auto' }}>
+              <Send size={20} /> {loading ? 'Salvando...' : 'Confirmar no WhatsApp'}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -209,5 +312,5 @@ export default function AgendamentoPublico() {
 }
 
 const lbl = { display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', marginBottom: '5px', color: '#333' }
-const inp = { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '16px', boxSizing:'border-box' }
+const inp = { width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ccc', fontSize: '16px', boxSizing: 'border-box' }
 const btn = { width: '100%', padding: '15px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 'bold', fontSize: '18px', cursor: 'pointer' }

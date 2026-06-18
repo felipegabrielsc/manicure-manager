@@ -1,15 +1,14 @@
 // src/pages/Financeiro.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Filter, Trash2, PieChart, HelpCircle } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Filter, Trash2, PieChart, HelpCircle, Download, Printer, Target } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import Modal from '../components/Modal' 
-// 1. IMPORTAÇÃO DOS GRÁFICOS
+import Modal from '../components/Modal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-
-// 2. IMPORTAÇÃO DO TUTORIAL
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
+import { exportToCsv, exportToPrint } from '../utils/exportReport'
+import toast from 'react-hot-toast'
 
 export default function Financeiro() {
   const [loading, setLoading] = useState(true)
@@ -36,6 +35,9 @@ export default function Financeiro() {
   const [valor, setValor] = useState('')
   const [clientIdVinculado, setClientIdVinculado] = useState(null)
   const [dataLancamento, setDataLancamento] = useState('')
+  const [metaMes, setMetaMes] = useState(0)
+  const [editandoMeta, setEditandoMeta] = useState(false)
+  const [metaInput, setMetaInput] = useState('')
 
   const mesFormatado = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dataAtual)
 
@@ -148,7 +150,47 @@ export default function Financeiro() {
     })) || []
 
     setMensalistasPendentes(pendentes)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: goal } = await supabase.from('financial_goals').select('target_amount')
+        .eq('user_id', user.id)
+        .eq('year', dataAtual.getFullYear())
+        .eq('month', dataAtual.getMonth() + 1)
+        .maybeSingle()
+      setMetaMes(goal?.target_amount || 0)
+    }
+
     setLoading(false)
+  }
+
+  async function salvarMeta() {
+    const valor = parseFloat(metaInput.replace(',', '.'))
+    if (!valor || valor <= 0) return toast.error('Informe um valor válido')
+
+    const { data: { user } } = await supabase.auth.getUser()
+    const { error } = await supabase.from('financial_goals').upsert({
+      user_id: user.id,
+      year: dataAtual.getFullYear(),
+      month: dataAtual.getMonth() + 1,
+      target_amount: valor,
+    }, { onConflict: 'user_id,year,month' })
+
+    if (error) toast.error('Erro ao salvar meta. Execute a migration 002.')
+    else {
+      setMetaMes(valor)
+      setEditandoMeta(false)
+      toast.success('Meta definida!')
+    }
+  }
+
+  function exportarCsv() {
+    exportToCsv(movimentacoesFiltradas, mesFormatado, { entradas: entradasVisiveis, saidas: saidasVisiveis, lucro: lucroVisivel })
+    toast.success('CSV exportado!')
+  }
+
+  function exportarPdf() {
+    exportToPrint(movimentacoesFiltradas, mesFormatado, { entradas: entradasVisiveis, saidas: saidasVisiveis, lucro: lucroVisivel })
   }
 
   // --- LÓGICA DE FILTROS E TOTAIS DINÂMICOS ---
@@ -163,6 +205,7 @@ export default function Financeiro() {
   const entradasVisiveis = movimentacoesFiltradas.filter(m => m.type === 'RECEITA').reduce((acc, curr) => acc + curr.amount, 0)
   const saidasVisiveis = movimentacoesFiltradas.filter(m => m.type === 'DESPESA').reduce((acc, curr) => acc + curr.amount, 0)
   const lucroVisivel = entradasVisiveis - saidasVisiveis
+  const progressoMeta = metaMes > 0 ? Math.min(100, (entradasVisiveis / metaMes) * 100) : 0
 
   // --- AÇÕES ---
   function abrirCobrancaRapida(cliente) {
@@ -229,10 +272,46 @@ export default function Financeiro() {
 
            <button onClick={() => mudarMes(-1)} style={btnNavStyle}>&lt;</button>
            <button onClick={() => mudarMes(1)} style={btnNavStyle}>&gt;</button>
+           <button onClick={exportarCsv} style={{...btnNavStyle, fontSize:'14px'}} title="Exportar CSV"><Download size={18}/></button>
+           <button onClick={exportarPdf} style={{...btnNavStyle, fontSize:'14px'}} title="Imprimir/PDF"><Printer size={18}/></button>
         </div>
       </div>
 
       <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
+
+        {/* META FINANCEIRA */}
+        <div id="fin-meta" style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Target size={16} color="#2563eb" /> Meta do mês
+            </h3>
+            {!editandoMeta ? (
+              <button onClick={() => { setEditandoMeta(true); setMetaInput(metaMes ? metaMes.toString() : '') }} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
+                {metaMes ? 'Editar' : 'Definir meta'}
+              </button>
+            ) : null}
+          </div>
+          {editandoMeta ? (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input placeholder="Ex: 5000" value={metaInput} onChange={e => setMetaInput(e.target.value)} style={{ ...inputStyle, flex: 1 }} inputMode="decimal" />
+              <button onClick={salvarMeta} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Salvar</button>
+              <button onClick={() => setEditandoMeta(false)} style={{ padding: '10px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>X</button>
+            </div>
+          ) : metaMes > 0 ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '8px' }}>
+                <span>R$ {entradasVisiveis.toFixed(2)} de R$ {Number(metaMes).toFixed(2)}</span>
+                <strong style={{ color: progressoMeta >= 100 ? '#16a34a' : '#2563eb' }}>{progressoMeta.toFixed(0)}%</strong>
+              </div>
+              <div style={{ height: '10px', background: '#e2e8f0', borderRadius: '5px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${progressoMeta}%`, background: progressoMeta >= 100 ? '#16a34a' : '#2563eb', transition: 'width 0.3s' }} />
+              </div>
+              {progressoMeta >= 100 && <p style={{ color: '#16a34a', fontSize: '13px', margin: '8px 0 0', fontWeight: 'bold' }}>Meta batida!</p>}
+            </>
+          ) : (
+            <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>Defina uma meta mensal para acompanhar seu progresso.</p>
+          )}
+        </div>
 
         {/* --- GRÁFICO (COM ID) --- */}
         <div id="fin-grafico" style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #eee', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>

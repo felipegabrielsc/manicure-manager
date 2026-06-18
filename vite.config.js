@@ -15,7 +15,8 @@ export default defineConfig({
         description: 'Gestão completa para manicures',
         theme_color: '#ffffff',
         background_color: '#ffffff',
-        display: 'standalone', // Isso faz parecer App nativo (sem barra de URL)
+        display: 'standalone',
+        permissions: ['notifications'],
         icons: [
           {
             src: 'carla-icon.svg', // Usando o SVG como ícone

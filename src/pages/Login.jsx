@@ -1,7 +1,7 @@
 // src/pages/Login.jsx
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Lock, Mail, LogIn } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -9,7 +9,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const navigate = useNavigate()
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -50,8 +49,12 @@ export default function Login() {
             {loading ? 'Entrando...' : 'Entrar no Sistema'}
           </button>
         </form>
+
+        <Link to="/esqueci-senha" style={{ display: 'block', marginTop: '16px', fontSize: '13px', color: '#2563eb', textDecoration: 'none' }}>
+          Esqueci minha senha
+        </Link>
         
-        <p style={{marginTop:'30px', fontSize:'12px', color:'#999'}}>
+        <p style={{marginTop:'20px', fontSize:'12px', color:'#999'}}>
             Não tem conta? Peça o link de convite para o administrador.
         </p>
       </div>

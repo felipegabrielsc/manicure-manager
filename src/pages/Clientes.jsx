@@ -252,6 +252,9 @@ export default function Clientes() {
                             <div>
                                 <h3 style={{margin:0, fontSize:'16px', color:'#1e293b'}}>{cliente.name}</h3>
                                 <span style={{fontSize:'12px', color:'#64748b'}}>{formatarTelefone(cliente.phone)}</span>
+                                {(cliente.loyalty_visits > 0) && (
+                                  <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>★ {cliente.loyalty_visits} visitas</span>
+                                )}
                             </div>
                         </div>
 

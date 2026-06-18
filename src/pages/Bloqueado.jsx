@@ -1,11 +1,9 @@
 // src/pages/Bloqueado.jsx
 import { ShieldAlert, Clock, MessageCircle } from 'lucide-react'
+import { openSupportWhatsApp } from '../config/app'
 
 export default function Bloqueado() {
-  const abrirSuporte = () => {
-    // SEU NÚMERO AQUI
-    window.open(`https://wa.me/5516996097901?text=${encodeURIComponent("Olá, acabei de me cadastrar no sistema. Poderia liberar meu acesso?")}`, '_blank')
-  }
+  const abrirSuporte = () => openSupportWhatsApp('Olá, acabei de me cadastrar no sistema. Poderia liberar meu acesso?')
 
   return (
     <div style={{ height: '100vh', background: '#f0f9ff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center', fontFamily: 'sans-serif' }}>

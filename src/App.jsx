@@ -17,7 +17,15 @@ import Configuracoes from './pages/Configuracoes'
 import AgendamentoPublico from './pages/AgendamentoPublico'
 import Bloqueado from './pages/Bloqueado' 
 import Admin from './pages/Admin'
-import Cadastro from './pages/Cadastro' 
+import Cadastro from './pages/Cadastro'
+import EsqueciSenha from './pages/EsqueciSenha'
+import RedefinirSenha from './pages/RedefinirSenha'
+import PerfilPublico from './pages/PerfilPublico'
+import Estoque from './pages/Estoque'
+import Fidelidade from './pages/Fidelidade'
+import Equipe from './pages/Equipe'
+import Planos from './pages/Planos'
+import { checkPendingNotifications } from './utils/notifications'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -52,6 +60,13 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (!session?.user?.id) return
+    checkPendingNotifications(session.user.id)
+    const interval = setInterval(() => checkPendingNotifications(session.user.id), 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [session])
+
   if (loading) {
     return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
   }
@@ -70,14 +85,16 @@ export default function App() {
           {/* ROTAS PÚBLICAS */}
           <Route path="/resumo/:id" element={<ResumoAgendamento />} />
           <Route path="/agendar/:userId" element={<AgendamentoPublico />} />
-
+          <Route path="/perfil/:userId" element={<PerfilPublico />} />
           <Route path="/cadastro-vip" element={<Cadastro />} />
+          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
 
           {!session ? (
             /* USUÁRIO NÃO LOGADO */
             <>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/esqueci-senha" element={<EsqueciSenha />} />
               <Route path="*" element={<Navigate to="/" />} />
             </>
           ) : (
@@ -89,6 +106,10 @@ export default function App() {
               <Route path="/servicos" element={<Servicos />} />
               <Route path="/financeiro" element={<Financeiro />} />
               <Route path="/configuracoes" element={<Configuracoes />} />
+              <Route path="/estoque" element={<Estoque />} />
+              <Route path="/fidelidade" element={<Fidelidade />} />
+              <Route path="/equipe" element={<Equipe />} />
+              <Route path="/planos" element={<Planos />} />
 
               {/* ROTA DO ADMIN */}
               <Route path="/admin" element={<Admin />} />

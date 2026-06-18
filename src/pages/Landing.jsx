@@ -1,10 +1,9 @@
 // src/pages/Landing.jsx
 import { Link } from 'react-router-dom'
 import { Calendar, Smartphone, Star, ArrowRight, TrendingUp, LogIn } from 'lucide-react'
+import { openSupportWhatsApp } from '../config/app'
 
-const EntrarContato = () => { 
-  window.open(`https://wa.me/5516996097901?text=${encodeURIComponent("Oi, gostaria de fazer parte do Agenda Manicure!")}`, '_blank') 
-}
+const EntrarContato = () => openSupportWhatsApp('Oi, gostaria de fazer parte do Agenda Manicure!')
 
 export default function Landing() {
   return (

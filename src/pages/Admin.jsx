@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { Link } from 'react-router-dom'
-import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet, Lock, Unlock, UserX, Mail } from 'lucide-react'
+import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet, Lock, Unlock, UserX, Mail, Crown } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function Admin() {
@@ -16,6 +16,7 @@ export default function Admin() {
   
   // Lista de Usuários para Gestão
   const [manicures, setManicures] = useState([])
+  const [plans, setPlans] = useState([])
 
   useEffect(() => {
     checkAdmin()
@@ -34,18 +35,21 @@ export default function Admin() {
         // 2. Busca TODAS as manicures (select * já pega o email agora)
         const { data: lista } = await supabase
             .from('profiles')
-            .select('*')
+            .select('*, subscription_plans(name, price)')
             .eq('is_admin', false) 
-            .order('created_at', { ascending: false }) 
+            .order('created_at', { ascending: false })
+
+        const { data: planos } = await supabase.from('subscription_plans').select('*').order('sort_order')
+        setPlans(planos || [])
             
         if (lista) {
             setManicures(lista)
             
-            // Atualiza métricas
             const total = lista.length
             setTotalUsers(total)
+            const receitaReal = lista.reduce((acc, m) => acc + (m.subscription_plans?.price || 0), 0)
             setReceitaSetup(total * 200)
-            setRendaMensal(total * 50)
+            setRendaMensal(receitaReal || total * 50)
         }
     }
     setLoading(false)
@@ -70,6 +74,24 @@ export default function Admin() {
     const link = `${window.location.origin}/cadastro-vip`
     navigator.clipboard.writeText(link)
     toast.success('Link de convite copiado!', { icon: '🎟️' })
+  }
+
+  const atribuirPlano = async (userId, planId, status) => {
+    const expires = status === 'active'
+      ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      : null
+
+    const { error } = await supabase.from('profiles').update({
+      plan_id: planId || null,
+      subscription_status: status,
+      subscription_expires_at: expires,
+    }).eq('id', userId)
+
+    if (error) toast.error('Erro ao atualizar plano')
+    else {
+      toast.success('Plano atualizado!')
+      checkAdmin()
+    }
   }
 
   if (loading) return <div style={{padding:'20px'}}>Carregando sistema...</div>
@@ -165,9 +187,23 @@ export default function Admin() {
                             </span>
 
                             {m.is_blocked && <span style={{fontSize:'10px', background:'#ef4444', color:'white', padding:'2px 6px', borderRadius:'4px', marginTop:'5px', display:'inline-block'}}>BLOQUEADA</span>}
+                            {m.subscription_plans?.name && (
+                              <span style={{fontSize:'10px', background:'#dbeafe', color:'#2563eb', padding:'2px 6px', borderRadius:'4px', marginTop:'5px', display:'inline-block', marginLeft:'4px'}}>
+                                <Crown size={10} style={{display:'inline'}}/> {m.subscription_plans.name}
+                              </span>
+                            )}
                         </div>
                     </div>
 
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+                    <select
+                      value={m.plan_id || ''}
+                      onChange={e => atribuirPlano(m.id, e.target.value || null, e.target.value ? 'active' : 'trial')}
+                      style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', maxWidth: '120px' }}
+                    >
+                      <option value="">Sem plano</option>
+                      {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
                     {/* Botão de Ação */}
                     <button 
                         onClick={() => toggleBloqueio(m.id, m.is_blocked)}
@@ -179,6 +215,7 @@ export default function Admin() {
                     >
                         {m.is_blocked ? <><Unlock size={14}/> LIBERAR</> : <><Lock size={14}/> BLOQUEAR</>}
                     </button>
+                    </div>
 
                 </div>
             ))}

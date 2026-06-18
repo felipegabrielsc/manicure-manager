@@ -1,7 +1,7 @@
 // src/pages/Servicos.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, Save, Trash2, Scissors, DollarSign } from 'lucide-react'
+import { ArrowLeft, Save, Trash2, Scissors, DollarSign, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
@@ -13,6 +13,7 @@ export default function Servicos() {
   // Form
   const [nome, setNome] = useState('')
   const [preco, setPreco] = useState('')
+  const [duracao, setDuracao] = useState('60')
 
   // Modal Confirmação
   const [modalOpen, setModalOpen] = useState(false)
@@ -80,12 +81,15 @@ export default function Servicos() {
   async function handleSalvar(e) {
     e.preventDefault()
     if (!nome || !preco) return toast.error("Preencha nome e preço!")
+    const duracaoNum = parseInt(duracao, 10)
+    if (!duracaoNum || duracaoNum < 15) return toast.error('Duração mínima: 15 minutos.')
 
     const { data: { user } } = await supabase.auth.getUser()
     
     const novoServico = {
         name: nome,
         default_price: parseFloat(preco.replace(',', '.')),
+        duration_minutes: duracaoNum,
         user_id: user.id
     }
 
@@ -97,6 +101,7 @@ export default function Servicos() {
         toast.success('Serviço salvo!')
         setNome('')
         setPreco('')
+        setDuracao('60')
         fetchServicos()
     }
   }
@@ -137,6 +142,20 @@ export default function Servicos() {
                 </div>
             </div>
 
+            <div>
+                <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Duração (minutos)</label>
+                <div style={{position:'relative'}}>
+                    <Clock size={16} color="#666" style={{position:'absolute', left:'10px', top:'14px'}}/>
+                    <select value={duracao} onChange={e => setDuracao(e.target.value)} style={{...inputStyle, paddingLeft:'30px'}}>
+                        <option value="30">30 min</option>
+                        <option value="45">45 min</option>
+                        <option value="60">1 hora</option>
+                        <option value="90">1h 30min</option>
+                        <option value="120">2 horas</option>
+                    </select>
+                </div>
+            </div>
+
             <button type="submit" style={btnSalvar}>
                 <Save size={20} style={{ marginRight: '10px' }} /> Salvar Serviço
             </button>
@@ -153,6 +172,7 @@ export default function Servicos() {
                 <div>
                     <strong style={{ fontSize: '16px', display: 'block' }}>{s.name}</strong>
                     <span style={{ fontSize: '14px', color: '#16a34a', fontWeight:'bold' }}>R$ {s.default_price.toFixed(2)}</span>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>{s.duration_minutes ?? 60} min</span>
                 </div>
               </div>
               <button onClick={() => confirmarExclusao(s.id, s.name)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '10px' }}>

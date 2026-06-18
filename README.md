@@ -1,16 +1,109 @@
-# React + Vite
+# Agenda Manicure
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sistema de gestão para manicures: agenda, clientes, serviços, financeiro, agendamento público e painel admin.
 
-Currently, two official plugins are available:
+## Requisitos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js 18+
+- Conta no [Supabase](https://supabase.com)
 
-## React Compiler
+## Setup local
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Clone o repositório e instale dependências:
 
-## Expanding the ESLint configuration
+```bash
+npm install
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+2. Copie as variáveis de ambiente:
+
+```bash
+cp .env.example .env
+```
+
+3. Preencha `.env`:
+
+| Variável | Descrição |
+|----------|-----------|
+| `VITE_SUPABASE_URL` | URL do projeto Supabase |
+| `VITE_SUPABASE_ANON_KEY` | Chave anon/public |
+| `VITE_MERCADOPAGO_CHECKOUT_URL` | Link de checkout Mercado Pago (planos) |
+| `VITE_VAPID_PUBLIC_KEY` | Chave pública VAPID para push (opcional) |
+
+4. Execute as migrations SQL no Supabase (SQL Editor), **nesta ordem**:
+
+```
+supabase/migrations/001_phase1_phase2.sql
+supabase/migrations/002_phase3_phase4.sql
+```
+
+5. Inicie o projeto:
+
+```bash
+npm run dev
+```
+
+## Scripts
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run dev` | Servidor de desenvolvimento |
+| `npm run build` | Build de produção |
+| `npm run preview` | Preview do build |
+| `npm run lint` | ESLint |
+
+## Rotas principais
+
+| Rota | Descrição |
+|------|-----------|
+| `/` | Agenda |
+| `/financeiro` | Financeiro, metas e exportação |
+| `/fidelidade` | Programa de fidelidade e cupons |
+| `/estoque` | Controle de estoque |
+| `/equipe` | Unidades e profissionais |
+| `/planos` | Assinatura SaaS |
+| `/agendar/:userId` | Agendamento público |
+| `/perfil/:userId` | Página pública da manicure |
+| `/admin` | Painel administrador |
+
+## Funcionalidades (Fases 1–4)
+
+- **Agenda:** diária/semanal, lembretes WhatsApp, validação de horários
+- **Financeiro:** metas mensais, exportar CSV, imprimir/PDF
+- **Fidelidade:** cartão de visitas, cupons de desconto
+- **Estoque:** alertas de estoque baixo
+- **Equipe:** múltiplas unidades e profissionais
+- **Planos:** assinatura via Mercado Pago (admin atribui planos)
+- **Push:** notificações PWA (Configurações)
+
+## Mercado Pago
+
+1. Crie links de assinatura no Mercado Pago
+2. Atualize `checkout_url` na tabela `subscription_plans` no Supabase
+3. Ou defina `VITE_MERCADOPAGO_CHECKOUT_URL` no `.env` como fallback
+
+## Push notifications
+
+1. Gere par de chaves VAPID (ex: `web-push generate-vapid-keys`)
+2. Configure `VITE_VAPID_PUBLIC_KEY` no `.env`
+3. Ative em **Configurações → Notificações Push**
+4. Instale o app como PWA no celular
+
+## Recuperação de senha
+
+Supabase → Authentication → URL Configuration:
+
+- **Site URL:** `http://localhost:5173`
+- **Redirect URLs:** `/redefinir-senha`
+
+## Deploy
+
+```bash
+npm run build
+```
+
+Configure todas as variáveis `VITE_*` no host (Vercel, Netlify, etc.).
+
+## PWA
+
+Instalável no celular. Ícone em `public/carla-icon.svg`.
