@@ -139,6 +139,20 @@ export default function Agenda() {
 
   const confirmarPagamento = async (metodo) => {
     await toggleStatus(idParaConcluir, 'AGENDADO', metodo)
+    if (metodo === 'MENSALIDADE') {
+      const apt = agendamentos.find(a => a.id === idParaConcluir)
+      if (apt?.client_id) {
+        const { data: cli } = await supabase.from('clients').select('monthly_due_day, monthly_due_offset, type').eq('id', apt.client_id).single()
+        await supabase.from('clients').update({ type: 'MENSALISTA' }).eq('id', apt.client_id)
+        const extra = {}
+        if (cli?.monthly_due_day == null) extra.monthly_due_day = 10
+        if (cli?.monthly_due_offset == null) extra.monthly_due_offset = 1
+        if (Object.keys(extra).length) {
+          await supabase.from('clients').update(extra).eq('id', apt.client_id)
+        }
+        toast('Essa visita vai para a mensalidade. Cobra no vencimento (padrão: dia 10 do mês seguinte).', { icon: '📅' })
+      }
+    }
     setPagamentoModalOpen(false)
     setIdParaConcluir(null)
   }
@@ -257,7 +271,7 @@ export default function Agenda() {
               <button onClick={() => confirmarPagamento('PIX')} style={btnPagamento}>💠 PIX</button>
               <button onClick={() => confirmarPagamento('DINHEIRO')} style={btnPagamento}>💵 Dinheiro</button>
               <button onClick={() => confirmarPagamento('CARTAO')} style={btnPagamento}>💳 Cartão</button>
-              <button onClick={() => confirmarPagamento('MENSALIDADE')} style={{ ...btnPagamento, background: '#fee2e2', color: '#dc2626' }}>Mensalidade</button>
+              <button onClick={() => confirmarPagamento('MENSALIDADE')} style={{ ...btnPagamento, background: '#fee2e2', color: '#dc2626' }}>Mensalidade (cobra no vencimento)</button>
             </div>
             <button onClick={() => setPagamentoModalOpen(false)} style={{ width: '100%', padding: '15px', marginTop: '15px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Cancelar</button>
           </div>

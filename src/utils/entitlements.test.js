@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { hasFeature, isSubscriptionUsable, canOpenPath } from './entitlements.js'
-import { toTimeInput, toDateInputValue } from './dates.js'
+import { toTimeInput, toDateInputValue, monthlyDueDate } from './dates.js'
 
 describe('entitlements', () => {
   it('admin passa em tudo', () => {
@@ -32,5 +32,18 @@ describe('dates', () => {
 
   it('formata data civil local', () => {
     expect(toDateInputValue(new Date(2026, 8, 5, 22, 0, 0))).toBe('2026-09-05')
+  })
+
+  it('mensalidade vence dia 10 do mês seguinte', () => {
+    const d = monthlyDueDate(2026, 2, 10, 1)
+    expect(d.getFullYear()).toBe(2026)
+    expect(d.getMonth()).toBe(3)
+    expect(d.getDate()).toBe(10)
+  })
+
+  it('mensalidade vence no último dia do mês dos serviços', () => {
+    const d = monthlyDueDate(2026, 1, 31, 0)
+    expect(d.getMonth()).toBe(1)
+    expect(d.getDate()).toBe(28)
   })
 })

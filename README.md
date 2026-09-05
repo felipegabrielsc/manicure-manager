@@ -39,6 +39,7 @@ supabase/migrations/003_phase_b_financeiro.sql
 supabase/migrations/004_phase_d_rls_booking.sql
 supabase/migrations/005_phase_e_invite_billing.sql
 supabase/migrations/006_phase_f_push_staff.sql
+supabase/migrations/007_mensalidade_vencimento.sql
 ```
 
 **Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
@@ -136,6 +137,17 @@ supabase secrets set CRON_SECRET=uma-senha-longa
 6. No celular: instale o PWA e ative em **Configurações → Notificações Push**
 
 A agenda mostra o nome da profissional e deixa filtrar. Duas profissionais podem ocupar o mesmo horário; conflito só na mesma pessoa (ou se o horário não tiver profissional).
+
+## Mensalidade
+
+Visita marcada como **Mensalidade** na Agenda **não entra no caixa** na hora. O valor aparece em **Financeiro → Mensalidades a receber** no mês do vencimento.
+
+Padrões no cadastro da cliente:
+
+- **Dia 10 do mês seguinte** (`monthly_due_offset = 1`)
+- **Último dia do mês dos serviços** (`monthly_due_day = 31`, offset `0`)
+
+Rode `007_mensalidade_vencimento.sql` no SQL Editor. Em Clientes dá para filtrar pelo método (PIX, dinheiro, cartão, mensalidade).
 
 ## Recuperação de senha
 
