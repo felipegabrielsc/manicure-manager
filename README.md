@@ -41,6 +41,7 @@ supabase/migrations/005_phase_e_invite_billing.sql
 supabase/migrations/006_phase_f_push_staff.sql
 supabase/migrations/007_mensalidade_vencimento.sql
 supabase/migrations/008_fix_incrementar_fidelidade.sql
+supabase/migrations/009_phase_g_ops.sql
 ```
 
 **Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
@@ -74,6 +75,7 @@ npm run dev
 | `/agendar/:userId` | Agendamento público |
 | `/perfil/:userId` | Página pública da manicure |
 | `/admin` | Painel administrador |
+| `/onboarding` | Primeiros passos após o cadastro |
 
 ## Funcionalidades (Fases 1–4)
 
@@ -149,6 +151,19 @@ Padrões no cadastro da cliente:
 - **Último dia do mês dos serviços** (`monthly_due_day = 31`, offset `0`)
 
 Rode `007_mensalidade_vencimento.sql` no SQL Editor. Em Clientes dá para filtrar pelo método (PIX, dinheiro, cartão, mensalidade).
+
+## Operação do salão (fase G)
+
+Rode `009_phase_g_ops.sql` e faça o deploy da função `push-dispatch` de novo. Inclui:
+
+- WhatsApp na cobrança de mensalidade e push no dia do vencimento
+- Confirmar/recusar pedido público com mensagem; falta/cancelamento com motivo
+- Sugerir retorno em 15/21/30 dias
+- Lista de espera no agendamento público
+- Comissão e login da profissional (Equipe → botão Login)
+- Onboarding de 2 minutos após o convite
+- Admin: ativas, trials da semana, quem não abriu o app em 7 dias
+- CSV das clientes em Configurações (LGPD)
 
 ## Recuperação de senha
 

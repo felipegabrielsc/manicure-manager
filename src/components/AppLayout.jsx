@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, Navigate } from 'react-router-dom'
 import {
   Calendar,
   User,
@@ -33,6 +33,8 @@ const NAV_ITEMS = [
   { to: '/configuracoes', label: 'Configurações', icon: Settings, id: 'nav-config' },
 ]
 
+const STAFF_HIDDEN = new Set(['/equipe', '/planos', '/configuracoes'])
+
 const TITLES = {
   '/': 'Agenda',
   '/novo': 'Novo agendamento',
@@ -51,6 +53,7 @@ export default function AppLayout() {
   const location = useLocation()
   const { profile } = useSessionProfile()
   const isAdmin = !!profile?.is_admin
+  const isStaff = !!profile?.is_staff
   const [menuAberto, setMenuAberto] = useState(false)
 
   useEffect(() => {
@@ -66,10 +69,15 @@ export default function AppLayout() {
   const titulo = TITLES[location.pathname] || 'Agenda Manicure'
   const mostrarNovo = location.pathname === '/'
 
+  if (profile?.onboarding_done === false && !profile?.is_staff && !profile?.is_admin) {
+    return <Navigate to="/onboarding" replace />
+  }
+
   function renderNav(closeOnClick) {
     return (
       <>
         {NAV_ITEMS.filter(item => {
+          if (isStaff && STAFF_HIDDEN.has(item.to)) return false
           const feature = FEATURE_BY_PATH[item.to]
           if (!feature) return true
           return hasFeature(profile, feature)

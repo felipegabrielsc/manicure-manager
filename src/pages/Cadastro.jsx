@@ -13,6 +13,7 @@ export default function Cadastro() {
   const [password, setPassword] = useState('')
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const [inviteKind, setInviteKind] = useState('owner')
   const token = (searchParams.get('token') || '').trim()
 
   useEffect(() => {
@@ -23,13 +24,22 @@ export default function Cadastro() {
         setChecking(false)
         return
       }
-      const { data, error } = await supabase.rpc('validar_convite', { p_token: token })
-      if (error || !data?.ok) {
-        setInviteOk(false)
-        setInviteReason(data?.reason || 'Convite inválido. Peça um novo link ao administrador.')
+      const staff = await supabase.rpc('validar_convite_staff', { p_token: token })
+      if (!staff.error && staff.data?.ok) {
+        setInviteKind('staff')
+        setInviteOk(true)
+        if (staff.data.email) setEmail(staff.data.email)
         setChecking(false)
         return
       }
+      const { data, error } = await supabase.rpc('validar_convite', { p_token: token })
+      if (error || !data?.ok) {
+        setInviteOk(false)
+        setInviteReason(data?.reason || staff.data?.reason || 'Convite inválido. Peça um novo link.')
+        setChecking(false)
+        return
+      }
+      setInviteKind('owner')
       if (data.email) setEmail(data.email)
       setInviteOk(true)
       setChecking(false)
@@ -59,6 +69,20 @@ export default function Cadastro() {
     }
 
     if (data.user && data.session) {
+      if (inviteKind === 'staff') {
+        const { data: consumed } = await supabase.rpc('consumir_convite_staff', { p_token: token })
+        if (!consumed?.ok) {
+          await supabase.auth.signOut()
+          toast.error(consumed?.reason || 'Não foi possível usar este convite.')
+          setLoading(false)
+          return
+        }
+        toast.success('Acesso da equipe criado!')
+        navigate('/')
+        window.location.reload()
+        return
+      }
+
       const { data: consumed } = await supabase.rpc('consumir_convite', { p_token: token })
       if (!consumed?.ok) {
         await supabase.auth.signOut()
@@ -72,7 +96,7 @@ export default function Cadastro() {
       ])
 
       toast.success('Cadastro realizado com sucesso!')
-      navigate('/')
+      navigate('/onboarding')
       window.location.reload()
       return
     }
@@ -107,8 +131,10 @@ export default function Cadastro() {
         <div style={{ background: '#eff6ff', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
           <Star size={30} color="#2563eb" />
         </div>
-        <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0' }}>Criar conta com convite</h2>
-        <p style={{ color: '#666', marginBottom: '30px' }}>Seu acesso de teste vale 14 dias. Depois, assine em Planos.</p>
+        <h2 style={{ color: '#1e3a8a', margin: '0 0 10px 0' }}>{inviteKind === 'staff' ? 'Entrar na equipe' : 'Criar conta com convite'}</h2>
+        <p style={{ color: '#666', marginBottom: '30px' }}>
+          {inviteKind === 'staff' ? 'Você vai acessar a agenda do salão com o seu login.' : 'Seu acesso de teste vale 14 dias. Depois, assine em Planos.'}
+        </p>
 
         <form onSubmit={handleCadastro} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           <div style={{ position: 'relative' }}>

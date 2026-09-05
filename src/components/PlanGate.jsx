@@ -13,6 +13,10 @@ export default function PlanGate() {
     return <Navigate to="/" replace />
   }
 
+  if (profile.is_staff && ['/equipe', '/planos', '/admin', '/configuracoes'].includes(path)) {
+    return <Navigate to="/" replace />
+  }
+
   if (!canOpenPath(profile, path)) {
     const feature = FEATURE_BY_PATH[path]
     if (feature && isSubscriptionUsable(profile) && !hasFeature(profile, feature)) {

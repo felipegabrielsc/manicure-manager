@@ -122,5 +122,36 @@ Deno.serve(async (req) => {
     reminderSent += 1
   }
 
-  return json({ ok: true, pendingSent, reminderSent })
+  let monthlySent = 0
+  const tzNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }))
+  const todayDay = tzNow.getDate()
+  const todayIso = `${tzNow.getFullYear()}-${String(tzNow.getMonth() + 1).padStart(2, '0')}-${String(tzNow.getDate()).padStart(2, '0')}`
+  const lastDay = new Date(tzNow.getFullYear(), tzNow.getMonth() + 1, 0).getDate()
+
+  const { data: mensalistas } = await admin
+    .from('clients')
+    .select('id, user_id, name, monthly_due_day, monthly_due_push_on, type')
+    .eq('type', 'MENSALISTA')
+
+  const billedOwners = new Map<string, number>()
+  for (const cli of mensalistas || []) {
+    const due = Number(cli.monthly_due_day) || 10
+    const dueToday = due >= lastDay ? todayDay === lastDay : todayDay === due
+    if (!dueToday) continue
+    if (cli.monthly_due_push_on === todayIso) continue
+    const { data: perfil } = await admin.from('profiles').select('push_enabled').eq('id', cli.user_id).single()
+    if (!perfil?.push_enabled) continue
+    billedOwners.set(cli.user_id, (billedOwners.get(cli.user_id) || 0) + 1)
+    await admin.from('clients').update({ monthly_due_push_on: todayIso }).eq('id', cli.id)
+  }
+  for (const [ownerId, qtd] of billedOwners) {
+    await sendToUser(admin, ownerId, {
+      title: 'Mensalidades hoje',
+      body: qtd === 1 ? 'Tem 1 mensalidade vencendo hoje.' : `Tem ${qtd} mensalidades vencendo hoje.`,
+      url: '/financeiro',
+    })
+    monthlySent += 1
+  }
+
+  return json({ ok: true, pendingSent, reminderSent, monthlySent })
 })
