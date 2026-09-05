@@ -1,11 +1,20 @@
+function formatExportDate(value) {
+  if (!value) return ''
+  const raw = String(value)
+  const isoDay = raw.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (isoDay) return `${isoDay[3]}/${isoDay[2]}/${isoDay[1]}`
+  return new Date(value).toLocaleDateString('pt-BR')
+}
+
 export function exportToCsv(movimentacoes, mesFormatado, totais) {
-  const header = ['Data', 'Descrição', 'Tipo', 'Origem', 'Valor (R$)']
+  const header = ['Data', 'Descrição', 'Tipo', 'Origem', 'Pagamento', 'Valor (R$)']
   const rows = movimentacoes.map(m => [
-    new Date(m.date).toLocaleDateString('pt-BR'),
+    formatExportDate(m.date),
     `"${(m.description || '').replace(/"/g, '""')}"`,
     m.type === 'RECEITA' ? 'Receita' : 'Despesa',
-    m.origem === 'AGENDA' ? 'Agenda' : 'Manual',
-    m.amount.toFixed(2).replace('.', ','),
+    m.origem === 'AGENDA' ? 'Agenda' : (m.category === 'produto' ? 'Produto' : 'Manual'),
+    m.payment_method || '',
+    Number(m.amount).toFixed(2).replace('.', ','),
   ])
 
   const summary = [
@@ -29,11 +38,11 @@ export function exportToCsv(movimentacoes, mesFormatado, totais) {
 export function exportToPrint(movimentacoes, mesFormatado, totais) {
   const rows = movimentacoes.map(m => `
     <tr>
-      <td>${new Date(m.date).toLocaleDateString('pt-BR')}</td>
+      <td>${formatExportDate(m.date)}</td>
       <td>${m.description}</td>
-      <td>${m.type === 'RECEITA' ? 'Receita' : 'Despesa'}</td>
+      <td>${m.type === 'RECEITA' ? 'Receita' : 'Despesa'}${m.payment_method ? ` (${m.payment_method})` : ''}</td>
       <td style="text-align:right;color:${m.type === 'RECEITA' ? '#16a34a' : '#dc2626'}">
-        ${m.type === 'DESPESA' ? '-' : '+'} R$ ${m.amount.toFixed(2)}
+        ${m.type === 'DESPESA' ? '-' : '+'} R$ ${Number(m.amount).toFixed(2)}
       </td>
     </tr>
   `).join('')

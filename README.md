@@ -35,6 +35,7 @@ cp .env.example .env
 ```
 supabase/migrations/001_phase1_phase2.sql
 supabase/migrations/002_phase3_phase4.sql
+supabase/migrations/003_phase_b_financeiro.sql
 ```
 
 5. Inicie o projeto:

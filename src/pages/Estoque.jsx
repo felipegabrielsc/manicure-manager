@@ -11,6 +11,7 @@ export default function Estoque() {
   const [quantidade, setQuantidade] = useState('')
   const [minimo, setMinimo] = useState('1')
   const [unidade, setUnidade] = useState('un')
+  const [precoVenda, setPrecoVenda] = useState('')
 
   useEffect(() => { carregar() }, [])
 
@@ -32,12 +33,13 @@ export default function Estoque() {
       quantity: parseFloat(quantidade.replace(',', '.')),
       min_quantity: parseFloat(minimo.replace(',', '.')) || 1,
       unit: unidade,
+      sale_price: precoVenda ? parseFloat(precoVenda.replace(',', '.')) : null,
     })
 
     if (error) toast.error('Erro ao salvar. Execute a migration 002.')
     else {
       toast.success('Item adicionado!')
-      setNome(''); setQuantidade(''); setMinimo('1')
+      setNome(''); setQuantidade(''); setMinimo('1'); setPrecoVenda('')
       carregar()
     }
   }
@@ -92,6 +94,7 @@ export default function Estoque() {
               </select>
             </div>
             <input placeholder="Alerta quando abaixo de..." value={minimo} onChange={e => setMinimo(e.target.value)} style={inp} inputMode="decimal" />
+            <input placeholder="Preço de venda (opcional)" value={precoVenda} onChange={e => setPrecoVenda(e.target.value)} style={inp} inputMode="decimal" />
             <button type="submit" style={btn}>Adicionar</button>
           </form>
         </div>
@@ -107,7 +110,7 @@ export default function Estoque() {
                 <div>
                   <strong>{item.name}</strong>
                   <span style={{ display: 'block', fontSize: '13px', color: baixo ? '#dc2626' : '#64748b' }}>
-                    {item.quantity} {item.unit} {baixo && '· ESTOQUE BAIXO'}
+                    {item.quantity} {item.unit} {item.sale_price ? `· R$ ${Number(item.sale_price).toFixed(2)}` : ''} {baixo && '· ESTOQUE BAIXO'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

@@ -243,14 +243,14 @@ export default function Clientes() {
                         key={cliente.id} 
                         id={index === 0 ? 'cli-detalhes' : ''} // Coloca ID só no primeiro para o tutorial apontar
                         onClick={() => setClienteSelecionada(cliente)}
-                        style={{ background: 'white', borderRadius: '12px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                        style={{ background: 'white', borderRadius: '12px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: '12px', minWidth: 0 }}
                     >
-                        <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
-                            <div style={{width:'40px', height:'40px', background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b'}}>
+                        <div style={{display:'flex', alignItems:'center', gap:'12px', minWidth: 0, flex: 1}}>
+                            <div style={{width:'40px', height:'40px', flexShrink: 0, background:'#f1f5f9', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b'}}>
                                 <User size={20}/>
                             </div>
-                            <div>
-                                <h3 style={{margin:0, fontSize:'16px', color:'#1e293b'}}>{cliente.name}</h3>
+                            <div style={{ minWidth: 0 }}>
+                                <h3 style={{margin:0, fontSize:'16px', color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{cliente.name}</h3>
                                 <span style={{fontSize:'12px', color:'#64748b'}}>{formatarTelefone(cliente.phone)}</span>
                                 {(cliente.loyalty_visits > 0) && (
                                   <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>★ {cliente.loyalty_visits} visitas</span>
@@ -258,7 +258,7 @@ export default function Clientes() {
                             </div>
                         </div>
 
-                        <div style={{textAlign:'right'}}>
+                        <div style={{textAlign:'right', flexShrink: 0}}>
                             <span style={{display:'block', fontSize:'10px', color:'#64748b', fontWeight:'bold'}}>GASTOU</span>
                             <span style={{color: cliente.totalGasto > 0 ? '#16a34a' : '#94a3b8', fontWeight: 'bold', fontSize: '16px'}}>
                                 R$ {cliente.totalGasto}
