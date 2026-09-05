@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { ArrowLeft, Copy, Save, Clock, Globe, User, Lock, Unlock, Loader2, HelpCircle, Bell, Ban, Trash2, ExternalLink, Smartphone } from 'lucide-react'
-import { subscribeToPush, unsubscribePush, requestNotificationPermission } from '../utils/notifications'
+import { subscribeToPush, unsubscribePush, getPushCapabilities } from '../utils/notifications'
+import { toTimeInput } from '../utils/dates'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
@@ -73,7 +74,13 @@ export default function Configuracoes() {
     let hoursMap = []
     for (let i = 0; i < 7; i++) {
         const found = existingHours?.find(h => h.day_of_week === i)
-        if (found) hoursMap.push(found)
+        if (found) {
+          hoursMap.push({
+            ...found,
+            open_time: toTimeInput(found.open_time, '09:00'),
+            close_time: toTimeInput(found.close_time, '18:00'),
+          })
+        }
         else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', is_closed: i === 0, user_id: user.id })
     }
     setHorarios(hoursMap)
@@ -106,6 +113,7 @@ export default function Configuracoes() {
 
   const updateHorario = (index, field, value) => {
     const newHorarios = [...horarios]
+    if (field === 'open_time' || field === 'close_time') value = toTimeInput(value)
     newHorarios[index][field] = value
     setHorarios(newHorarios)
   }
@@ -132,7 +140,11 @@ export default function Configuracoes() {
         booking_active: agendamentoAtivo,
     })
     const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, is_closed, user_id }) => ({
-      day_of_week, open_time, close_time, is_closed, user_id,
+      day_of_week,
+      open_time: toTimeInput(open_time, '09:00'),
+      close_time: toTimeInput(close_time, '18:00'),
+      is_closed,
+      user_id,
     }))
     const { error: errHorario } = await supabase.from('business_hours').upsert(dadosHorarios, { onConflict: 'user_id, day_of_week' })
     if (errPerfil || errHorario) toast.error('Erro ao salvar')
@@ -141,20 +153,28 @@ export default function Configuracoes() {
 
   async function togglePush() {
     if (!userId) return
+    const caps = getPushCapabilities()
     if (pushAtivo) {
       await unsubscribePush(userId)
       setPushAtivo(false)
       toast('Notificações desativadas')
+      return
+    }
+    if (!caps.canSubscribe) {
+      if (!caps.vapid) return toast.error('Falta a chave VITE_VAPID_PUBLIC_KEY no .env / Vercel.')
+      if (!caps.notificationApi) return toast.error('Este navegador não suporta notificações.')
+      return toast.error('Instale o app na tela inicial (PWA) e tente de novo.')
+    }
+    const result = await subscribeToPush(userId)
+    if (result.ok) {
+      setPushAtivo(true)
+      toast.success('Permissão salva neste aparelho. Alertas só aparecem com o app aberto até o envio pelo servidor.')
+    } else if (result.reason === 'denied') {
+      toast.error('Permissão bloqueada. Libere notificações nas configurações do celular/navegador.')
+    } else if (result.reason === 'no_vapid') {
+      toast.error('Falta a chave VITE_VAPID_PUBLIC_KEY no .env / Vercel.')
     } else {
-      const ok = await subscribeToPush(userId)
-      if (ok) {
-        setPushAtivo(true)
-        toast.success('Notificações ativadas!')
-      } else {
-        const perm = await requestNotificationPermission()
-        if (perm === 'denied') toast.error('Permissão negada nas configurações do navegador')
-        else toast.error('Não foi possível ativar. Instale o app (PWA) e tente novamente.')
-      }
+      toast.error('Não foi possível ativar agora.')
     }
   }
 
@@ -204,55 +224,13 @@ export default function Configuracoes() {
 
   if (loading) return <div style={{padding:'20px'}}>Carregando...</div>
 
+  const pushCaps = getPushCapabilities()
+
   return (
     <div style={{ paddingBottom: '100px', background: '#f8fafc', minHeight: '100%', overflowX: 'hidden' }}>
-      
-      {/* CSS RESPONSIVO BLINDADO */}
       <style>{`
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        
-        /* Layout Padrão (Desktop/Tablet) */
-        .schedule-row {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 0; border-bottom: 1px solid #eee;
-        }
-        .day-label { width: 90px; font-weight: bold; font-size: 14px; }
-        .schedule-inputs { display: flex; gap: 5px; align-items: center; }
-        .mobile-check-wrapper { display: none; }
-        .desktop-check { display: block; }
-        .input-time { padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-
-        /* MODO CELULAR (Ativa em telas menores que 480px - Cobre quase todos os celulares) */
-        @media (max-width: 480px) {
-            .schedule-row {
-                flex-direction: column; /* Empilha tudo */
-                align-items: stretch;   /* Estica para ocupar a largura */
-                gap: 8px;
-                padding: 15px 0;
-            }
-            .day-label {
-                width: 100%;
-                display: flex;
-                justify-content: space-between; /* Dia na esquerda, Checkbox na direita */
-                align-items: center;
-                font-size: 16px; /* Fonte maior pra ler melhor */
-                margin-bottom: 5px;
-            }
-            .schedule-inputs {
-                width: 100%;
-                display: grid;
-                grid-template-columns: 1fr auto 1fr; /* Input - Tracinho - Input */
-            }
-            .input-time {
-                width: 100%;
-                text-align: center;
-                padding: 10px; /* Mais fácil de tocar com o dedo */
-                background: #f8fafc;
-            }
-            .desktop-check { display: none; }
-            .mobile-check-wrapper { display: block; }
-        }
       `}</style>
 
       <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -324,12 +302,31 @@ export default function Configuracoes() {
         {/* PUSH NOTIFICATIONS */}
         <div id="card-push" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
             <h3 style={{ marginTop: 0, color: '#2563eb', display:'flex', alignItems:'center', gap:'10px' }}><Smartphone size={20}/> Notificações Push</h3>
-            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 12px' }}>Receba alertas de novas solicitações e lembretes mesmo com o app em segundo plano.</p>
-            <button onClick={togglePush} style={{
-              width: '100%', padding: '14px', borderRadius: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer',
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 12px' }}>
+              Hoje o aviso só aparece neste aparelho, com o app aberto (ou instalado na tela inicial). Envio com o celular fechado ainda não está ligado.
+            </p>
+            {!pushCaps.vapid && (
+              <p style={{ fontSize: '13px', color: '#b45309', background: '#fffbeb', padding: '10px', borderRadius: '8px', margin: '0 0 12px' }}>
+                Falta configurar <strong>VITE_VAPID_PUBLIC_KEY</strong> no .env e na Vercel. Sem isso o botão não ativa push.
+              </p>
+            )}
+            {pushCaps.vapid && !pushCaps.serviceWorker && (
+              <p style={{ fontSize: '13px', color: '#b45309', background: '#fffbeb', padding: '10px', borderRadius: '8px', margin: '0 0 12px' }}>
+                No celular, use o menu do navegador → Adicionar à tela inicial, e abra por esse ícone.
+              </p>
+            )}
+            {pushCaps.permission === 'denied' && (
+              <p style={{ fontSize: '13px', color: '#991b1b', margin: '0 0 12px' }}>
+                As notificações estão bloqueadas neste navegador. Libere em Ajustes → Notificações.
+              </p>
+            )}
+            <button onClick={togglePush} disabled={!pushAtivo && !pushCaps.canSubscribe} style={{
+              width: '100%', padding: '14px', borderRadius: '8px', border: 'none', fontWeight: 'bold',
+              cursor: (!pushAtivo && !pushCaps.canSubscribe) ? 'not-allowed' : 'pointer',
               background: pushAtivo ? '#fee2e2' : '#2563eb', color: pushAtivo ? '#dc2626' : 'white',
+              opacity: (!pushAtivo && !pushCaps.canSubscribe) ? 0.55 : 1,
             }}>
-              {pushAtivo ? 'Desativar notificações' : 'Ativar notificações push'}
+              {pushAtivo ? 'Desativar neste aparelho' : 'Ativar neste aparelho'}
             </button>
         </div>
 
@@ -360,8 +357,8 @@ export default function Configuracoes() {
             <div style={{ display: 'grid', gap: '10px', marginBottom: '12px' }}>
                 <input type="date" value={bloqueioData} onChange={e => setBloqueioData(e.target.value)} style={inputStyle} />
                 <div style={{ display: 'flex', gap: '10px' }}>
-                    <input type="time" value={bloqueioInicio} onChange={e => setBloqueioInicio(e.target.value)} style={inputStyle} />
-                    <input type="time" value={bloqueioFim} onChange={e => setBloqueioFim(e.target.value)} style={inputStyle} />
+                    <input type="time" value={bloqueioInicio} onChange={e => setBloqueioInicio(toTimeInput(e.target.value, ''))} style={inputStyle} />
+                    <input type="time" value={bloqueioFim} onChange={e => setBloqueioFim(toTimeInput(e.target.value, ''))} style={inputStyle} />
                 </div>
                 <input placeholder="Motivo (opcional)" value={bloqueioMotivo} onChange={e => setBloqueioMotivo(e.target.value)} style={inputStyle} />
                 <button type="button" onClick={adicionarBloqueio} style={{ padding: '12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>+ Adicionar bloqueio</button>
@@ -384,29 +381,31 @@ export default function Configuracoes() {
         {/* CARD HORÁRIOS RESPONSIVO */}
         <div id="card-horarios" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd' }}>
             <h3 style={{ marginTop: 0, color: '#16a34a', display:'flex', alignItems:'center', gap:'10px' }}><Clock size={20}/> Horários</h3>
-            
+            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>Uma linha por dia: aberto, fecha e se atende.</p>
+
             {horarios.map((h, i) => (
-                <div key={i} className="schedule-row">
-                    {/* Celular: Nome na esquerda, Checkbox na direita (na linha de cima) */}
-                    <div className="day-label">
-                        <span style={{ color: h.is_closed ? '#94a3b8' : '#334155' }}>{diasSemana[h.day_of_week]}</span>
-                        <div className="mobile-check-wrapper">
-                            <input type="checkbox" checked={!h.is_closed} onChange={e => updateHorario(i, 'is_closed', !e.target.checked)} style={{transform: 'scale(1.3)'}} />
-                        </div>
-                    </div>
-
-                    {h.is_closed ? (
-                        <span style={{flex:1, textAlign:'left', fontSize:'12px', color:'#ef4444', fontWeight:'bold', paddingLeft:'5px'}}>FECHADO</span>
-                    ) : (
-                        <div className="schedule-inputs">
-                            <input type="time" value={h.open_time} onChange={e => updateHorario(i, 'open_time', e.target.value)} className="input-time" />
-                            <span style={{color:'#666'}}>-</span>
-                            <input type="time" value={h.close_time} onChange={e => updateHorario(i, 'close_time', e.target.value)} className="input-time" />
-                        </div>
-                    )}
-
-                    {/* Desktop: Checkbox fica na direita, na mesma linha */}
-                    <input className="desktop-check" type="checkbox" checked={!h.is_closed} onChange={e => updateHorario(i, 'is_closed', !e.target.checked)} style={{transform: 'scale(1.2)', cursor:'pointer'}} />
+                <div key={h.day_of_week} className="hours-row">
+                    <span className="day-name" style={{ color: h.is_closed ? '#94a3b8' : '#334155' }}>{diasSemana[h.day_of_week]}</span>
+                    <input
+                      type="time"
+                      value={toTimeInput(h.open_time, '09:00')}
+                      disabled={h.is_closed}
+                      onChange={e => updateHorario(i, 'open_time', e.target.value)}
+                    />
+                    <span style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
+                    <input
+                      type="time"
+                      value={toTimeInput(h.close_time, '18:00')}
+                      disabled={h.is_closed}
+                      onChange={e => updateHorario(i, 'close_time', e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className={`hours-toggle${h.is_closed ? '' : ' is-open'}`}
+                      onClick={() => updateHorario(i, 'is_closed', !h.is_closed)}
+                    >
+                      {h.is_closed ? 'Fechado' : 'Aberto'}
+                    </button>
                 </div>
             ))}
 

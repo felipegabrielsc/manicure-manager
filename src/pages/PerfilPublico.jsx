@@ -11,27 +11,16 @@ export default function PerfilPublico() {
 
   useEffect(() => {
     async function load() {
-      const { data: p } = await supabase
-        .from('profiles')
-        .select('business_name, whatsapp, bio, address, instagram, booking_active, public_profile_active')
-        .eq('id', userId)
-        .single()
+      const { data, error } = await supabase.rpc('get_perfil_publico', { p_user_id: userId })
 
-      if (!p || p.public_profile_active === false) {
+      if (error || !data?.ok || !data.profile) {
         setPerfil(null)
         setLoading(false)
         return
       }
 
-      setPerfil(p)
-
-      const { data: s } = await supabase
-        .from('services')
-        .select('name, default_price, duration_minutes')
-        .eq('user_id', userId)
-        .order('name')
-
-      setServicos(s || [])
+      setPerfil(data.profile)
+      setServicos(data.services || [])
       setLoading(false)
     }
     load()

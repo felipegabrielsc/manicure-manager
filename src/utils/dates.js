@@ -36,3 +36,12 @@ export function monthRangeLocal(date) {
 export function money(value) {
   return Number(value || 0).toFixed(2)
 }
+
+/** Postgres time (`09:00:00`) → valor válido para `<input type="time">`. */
+export function toTimeInput(value, fallback = '09:00') {
+  if (value == null || value === '') return fallback
+  const match = String(value).match(/(\d{1,2}):(\d{2})/)
+  if (!match) return fallback
+  return `${String(match[1]).padStart(2, '0')}:${match[2]}`
+}
+

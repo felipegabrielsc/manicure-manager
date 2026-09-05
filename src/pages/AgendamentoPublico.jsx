@@ -5,12 +5,12 @@ import { supabase } from '../supabaseClient'
 import { Clock, User, Scissors, Phone, Send, CheckCircle, Lock, Calendar } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 import {
-  fetchSchedulingContext,
+  fetchPublicAgenda,
   generateAvailableSlots,
   validateBookingSlot,
   getServiceDuration,
 } from '../utils/scheduling'
-import { calcularDesconto } from '../utils/exportReport'
+import { toDateInputValue } from '../utils/dates'
 
 export default function AgendamentoPublico() {
   const { userId } = useParams()
@@ -30,20 +30,16 @@ export default function AgendamentoPublico() {
   const [data, setData] = useState('')
   const [horaSelecionada, setHoraSelecionada] = useState('')
   const [cupomCodigo, setCupomCodigo] = useState('')
-  const [cupomValidado, setCupomValidado] = useState(null)
   const [slotsDisponiveis, setSlotsDisponiveis] = useState([])
   const [carregandoSlots, setCarregandoSlots] = useState(false)
 
   useEffect(() => {
     async function init() {
       try {
-        const { data: perfil, error } = await supabase
-          .from('profiles')
-          .select('whatsapp, booking_active, business_name')
-          .eq('id', userId)
-          .single()
+        const agenda = await fetchPublicAgenda(supabase, userId, new Date())
+        const perfil = agenda.profile
 
-        if (error || (perfil && perfil.booking_active === false)) {
+        if (!agenda.ok || perfil?.booking_active === false) {
           setAgendaAberta(false)
           return
         }
@@ -51,9 +47,7 @@ export default function AgendamentoPublico() {
         setAgendaAberta(true)
         setManicurePhone(perfil?.whatsapp || '')
         setBusinessName(perfil?.business_name || 'Manicure')
-
-        const { data: s } = await supabase.from('services').select('*').eq('user_id', userId)
-        setServicos(s || [])
+        setServicos(agenda.services || [])
         setCodigoValidacao(Math.floor(1000 + Math.random() * 9000).toString())
       } catch (err) {
         console.error(err)
@@ -76,7 +70,7 @@ export default function AgendamentoPublico() {
       const durationMinutes = getServiceDuration(servico)
       const dateObj = new Date(`${data}T12:00:00`)
 
-      const ctx = await fetchSchedulingContext(supabase, userId, dateObj)
+      const ctx = await fetchPublicAgenda(supabase, userId, dateObj)
       const slots = generateAvailableSlots({
         date: dateObj,
         durationMinutes,
@@ -107,8 +101,8 @@ export default function AgendamentoPublico() {
 
     setLoading(true)
 
-    const { data: perfilCheck } = await supabase.from('profiles').select('booking_active').eq('id', userId).single()
-    if (perfilCheck && perfilCheck.booking_active === false) {
+    const ctx = await fetchPublicAgenda(supabase, userId, new Date(horaSelecionada))
+    if (!ctx.ok || ctx.profile?.booking_active === false) {
       setLoading(false)
       setAgendaAberta(false)
       return toast.error('A agenda acabou de ser fechada pela profissional.')
@@ -116,7 +110,6 @@ export default function AgendamentoPublico() {
 
     const servico = servicos.find(s => s.id == servicoId)
     const startTime = new Date(horaSelecionada)
-    const ctx = await fetchSchedulingContext(supabase, userId, startTime)
     const validation = validateBookingSlot({
       startTime,
       durationMinutes: getServiceDuration(servico),
@@ -136,78 +129,39 @@ export default function AgendamentoPublico() {
         setLoading(false)
         return toast.error(cupom?.reason || 'Cupom inválido')
       }
-      setCupomValidado(cupom)
-    } else {
-      setCupomValidado(null)
     }
 
-    try {
-      const { data: check, error: rpcError } = await supabase.rpc('verificar_disponibilidade', { telefone_cliente: phone })
-
-      if (rpcError) {
-        console.error(rpcError)
-        throw new Error('Erro conexão')
-      }
-
-      if (check && !check.pode_agendar) {
-        setLoading(false)
-        return toast.error(check.motivo === 'BANIDO' ? 'Contate a manicure.' : 'Você já tem um agendamento pendente.')
-      }
-
-      setLoading(false)
-      setEtapa(2)
-    } catch {
-      setLoading(false)
-      toast.error('Erro ao verificar.')
-    }
+    setLoading(false)
+    setEtapa(2)
   }
 
   async function finalizarAgendamento() {
     setLoading(true)
     const dataFinal = new Date(horaSelecionada)
-    const servico = servicos.find(s => s.id == servicoId)
-    const precoBase = servico?.default_price || 0
-    const desconto = cupomValidado ? calcularDesconto(precoBase, cupomValidado.discount_type, cupomValidado.discount_value) : 0
-    const preco = Math.max(0, precoBase - desconto)
 
-    let clienteId = null
-    const phoneClean = phone.replace(/\D/g, '')
-    const { data: cliExistente } = await supabase.from('clients').select('id').eq('user_id', userId).ilike('phone', `%${phoneClean}%`).maybeSingle()
-
-    if (cliExistente) clienteId = cliExistente.id
-    else {
-      const { data: novo } = await supabase.from('clients').insert({ name: nome, phone: phone, type: 'AVULSO', user_id: userId }).select().single()
-      clienteId = novo?.id
-    }
-
-    const { error } = await supabase.from('appointments').insert({
-      client_id: clienteId,
-      service_id: servicoId,
-      start_time: dataFinal.toISOString(),
-      agreed_price: preco,
-      status: 'PENDENTE',
-      user_id: userId,
-      coupon_id: cupomValidado?.coupon_id || null,
-      discount_applied: desconto,
+    const { data: result, error } = await supabase.rpc('criar_agendamento_publico', {
+      p_user_id: userId,
+      p_service_id: servicoId,
+      p_start_time: dataFinal.toISOString(),
+      p_client_name: nome,
+      p_phone: phone,
+      p_coupon_code: cupomCodigo || null,
     })
 
-    if (!error && cupomValidado?.coupon_id) {
-      const { data: cup } = await supabase.from('coupons').select('uses_count').eq('id', cupomValidado.coupon_id).single()
-      await supabase.from('coupons').update({ uses_count: (cup?.uses_count || 0) + 1 }).eq('id', cupomValidado.coupon_id)
+    if (error || !result?.ok) {
+      toast.error(result?.reason || 'Erro ao agendar. Confira se a migration 004 foi aplicada no Supabase.')
+      setLoading(false)
+      return
     }
 
-    if (error) {
-      toast.error('Erro ao agendar')
-      setLoading(false)
-    } else {
-      const horaLabel = dataFinal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-      const msg = `Olá, sou *${nome}*! Solicitei um horário pelo site.\n📅 *${dataFinal.toLocaleDateString('pt-BR')} às ${horaLabel}*\nCódigo: *${codigoValidacao}*`
-      window.open(`https://wa.me/55${manicurePhone}?text=${encodeURIComponent(msg)}`, '_blank')
-      setEtapa(3)
-    }
+    const wa = String(result.whatsapp || manicurePhone).replace(/\D/g, '')
+    const horaLabel = dataFinal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    const msg = `Olá, sou *${nome}*! Solicitei um horário pelo site.\n📅 *${dataFinal.toLocaleDateString('pt-BR')} às ${horaLabel}*\nCódigo: *${codigoValidacao}*`
+    if (wa) window.open(`https://wa.me/55${wa}?text=${encodeURIComponent(msg)}`, '_blank')
+    setEtapa(3)
   }
 
-  const minDate = new Date().toISOString().split('T')[0]
+  const minDate = toDateInputValue()
 
   if (agendaAberta === null) {
     return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>Carregando agenda...</div>

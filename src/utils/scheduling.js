@@ -169,6 +169,59 @@ export function generateAvailableSlots({
   return slots
 }
 
+export async function fetchPublicAgenda(supabase, userId, date) {
+  const d = date instanceof Date ? date : new Date(date)
+  const p_day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+  const { data, error } = await supabase.rpc('get_agenda_publica', {
+    p_user_id: userId,
+    p_day,
+  })
+
+  if (error || !data?.ok) {
+    return {
+      error,
+      ok: false,
+      reason: data?.reason || error?.message,
+      profile: null,
+      businessHours: [],
+      appointments: [],
+      blockedSlots: [],
+      services: [],
+    }
+  }
+
+  const appointments = (data.busy || []).map((b, i) => {
+    const start = new Date(b.start)
+    const end = new Date(b.end)
+    const durationMinutes = Number.isFinite(end - start)
+      ? Math.max(1, Math.round((end - start) / 60000))
+      : 60
+    return {
+      id: `busy-${i}`,
+      start_time: b.start,
+      status: 'AGENDADO',
+      services: { duration_minutes: durationMinutes },
+    }
+  })
+
+  const blockedSlots = (data.blocked || []).map((b, i) => ({
+    id: `blk-${i}`,
+    start_time: b.start,
+    end_time: b.end,
+  }))
+
+  return {
+    ok: true,
+    error: null,
+    profile: data.profile,
+    businessHours: data.business_hours || [],
+    appointments,
+    blockedSlots,
+    services: data.services || [],
+  }
+}
+
 export async function fetchSchedulingContext(supabase, userId, date, excludeAppointmentId = null) {
   const { start, end } = getDayBounds(date)
 

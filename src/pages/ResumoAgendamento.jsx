@@ -11,14 +11,20 @@ export default function ResumoAgendamento() {
 
   useEffect(() => {
     async function fetchAgendamento() {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select(`*, clients (name, phone), services (name, default_price, duration_minutes)`)
-        .eq('id', id)
-        .single()
-      
-      if (error) console.error(error)
-      else setAgendamento(data)
+      const { data, error } = await supabase.rpc('get_resumo_agendamento', { p_id: id })
+
+      if (error || !data?.ok) {
+        if (error) console.error(error)
+        setAgendamento(null)
+      } else {
+        setAgendamento({
+          start_time: data.start_time,
+          status: data.status,
+          agreed_price: Number(data.agreed_price || 0),
+          clients: data.clients,
+          services: data.services,
+        })
+      }
       setLoading(false)
     }
     fetchAgendamento()
