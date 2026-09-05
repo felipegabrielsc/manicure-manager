@@ -26,35 +26,49 @@ import Fidelidade from './pages/Fidelidade'
 import Equipe from './pages/Equipe'
 import Planos from './pages/Planos'
 import AppLayout from './components/AppLayout'
+import { SessionProfileContext } from './context/SessionProfile'
 import { checkPendingNotifications } from './utils/notifications'
+
+const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [bloqueado, setBloqueado] = useState(false) // Estado do Banimento
+  const [profile, setProfile] = useState(null)
+  const [bloqueado, setBloqueado] = useState(false)
+  const [profileChecked, setProfileChecked] = useState(false)
+
+  async function loadProfile(userId) {
+    if (!userId) {
+      setProfile(null)
+      setBloqueado(false)
+      setProfileChecked(true)
+      return
+    }
+    const { data } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', userId).single()
+    setProfile(data || null)
+    setBloqueado(data?.is_blocked === true)
+    setProfileChecked(true)
+  }
 
   useEffect(() => {
-    // Função para verificar se está banido
-    const checkUserStatus = async (userId) => {
-      if (!userId) return;
-      const { data } = await supabase.from('profiles').select('is_blocked').eq('id', userId).single()
-      if (data && data.is_blocked === true) {
-        setBloqueado(true)
-      } else {
-        setBloqueado(false)
-      }
-    }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session)
-      if (session) checkUserStatus(session.user.id)
+      if (session) await loadProfile(session.user.id)
+      else setProfileChecked(true)
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (session) checkUserStatus(session.user.id)
-      else setBloqueado(false)
+      if (session) {
+        setProfileChecked(false)
+        loadProfile(session.user.id)
+      } else {
+        setProfile(null)
+        setBloqueado(false)
+        setProfileChecked(true)
+      }
       setLoading(false)
     })
 
@@ -68,7 +82,7 @@ export default function App() {
     return () => clearInterval(interval)
   }, [session])
 
-  if (loading) {
+  if (loading || (session && !profileChecked)) {
     return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
   }
 
@@ -78,6 +92,7 @@ export default function App() {
   }
 
   return (
+    <SessionProfileContext.Provider value={{ profile, refreshProfile: () => session?.user?.id && loadProfile(session.user.id) }}>
     <BrowserRouter>
       <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
       
@@ -115,5 +130,6 @@ export default function App() {
         </Routes>
       </div>
     </BrowserRouter>
+    </SessionProfileContext.Provider>
   )
 }

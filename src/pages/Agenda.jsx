@@ -18,6 +18,9 @@ export default function Agenda() {
   const [modoSemana, setModoSemana] = useState(false)
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState(null)
+  const [staffList, setStaffList] = useState([])
+  const [staffFiltro, setStaffFiltro] = useState('')
+  const [staffEditId, setStaffEditId] = useState('')
 
   // Estados dos Modais
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -39,7 +42,12 @@ export default function Agenda() {
   useEffect(() => { carregarLembretes() }, [])
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setUserId(user.id) })
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      setUserId(user.id)
+      const { data } = await supabase.from('staff_members').select('id, name').eq('active', true).order('name')
+      setStaffList(data || [])
+    })
   }, [])
 
   async function carregarSemana() {
@@ -115,7 +123,7 @@ export default function Agenda() {
     setLoading(true)
     const inicioDia = new Date(dataAtual); inicioDia.setHours(0, 0, 0, 0)
     const fimDia = new Date(dataAtual); fimDia.setHours(23, 59, 59, 999)
-    const { data } = await supabase.from('appointments').select(`*, clients (name, type, phone), services (name)`).gte('start_time', inicioDia.toISOString()).lte('start_time', fimDia.toISOString()).order('start_time', { ascending: true })
+    const { data } = await supabase.from('appointments').select(`*, clients (name, type, phone), services (name), staff_members (name)`).gte('start_time', inicioDia.toISOString()).lte('start_time', fimDia.toISOString()).order('start_time', { ascending: true })
     if (data) setAgendamentos(data)
     setLoading(false)
   }
@@ -155,6 +163,7 @@ export default function Agenda() {
   const abrirOpcoes = (agendamento) => {
     if (agendamento.status === 'PENDENTE') return;
     setAgendamentoSelecionado(agendamento)
+    setStaffEditId(agendamento.staff_id || '')
     const d = new Date(agendamento.start_time); d.setMinutes(d.getMinutes() - d.getTimezoneOffset())
     setNovaDataHora(d.toISOString().slice(0, 16)); setEditModalOpen(true)
   }
@@ -181,11 +190,15 @@ export default function Agenda() {
       appointments: ctx.appointments,
       blockedSlots: ctx.blockedSlots,
       excludeAppointmentId: agendamentoSelecionado.id,
+      staffId: staffEditId || null,
     })
 
     if (!validation.valid) return toast.error(validation.reason)
 
-    const { error } = await supabase.from('appointments').update({ start_time: startTime.toISOString() }).eq('id', agendamentoSelecionado.id)
+    const { error } = await supabase.from('appointments').update({
+      start_time: startTime.toISOString(),
+      staff_id: staffEditId || null,
+    }).eq('id', agendamentoSelecionado.id)
     if (!error) { buscarAgendamentos(); carregarSemana(); fecharOpcoes(); toast.success('Remarcado!') }
     else { toast.error('Erro ao remarcar') }
   }
@@ -210,6 +223,12 @@ export default function Agenda() {
   const abrirSuporte = () => openSupportWhatsApp('Oi, preciso de ajuda!')
   const diasSemana = getWeekDays(dataAtual)
   const hojeStr = new Date().toDateString()
+  const agendaDoDia = staffFiltro
+    ? agendamentos.filter(a => a.staff_id === staffFiltro)
+    : agendamentos
+  const semanaFiltrada = staffFiltro
+    ? agendamentosSemana.filter(a => a.staff_id === staffFiltro)
+    : agendamentosSemana
 
   return (
     <div style={{ paddingBottom: '90px', width: '100%', overflowX: 'hidden' }}>
@@ -261,6 +280,16 @@ export default function Agenda() {
               <button onClick={salvarNovaData} style={{ ...btnFull, background: '#2563eb', marginTop: '10px' }}>Salvar Data</button>
             </div>
 
+            {staffList.length > 0 && (
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>Profissional</label>
+                <select value={staffEditId} onChange={e => setStaffEditId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', marginTop: '6px' }}>
+                  <option value="">Sem profissional</option>
+                  {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
               <button onClick={() => { setAcaoConfirmacao(() => marcarFalta); setAlertModal({ isOpen: true, type: 'confirm', title: 'Falta?', message: 'Registrar falta?' }) }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: '#fef2f2', color: '#b91c1c', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
                 <AlertTriangle size={18} /> Faltou
@@ -297,7 +326,7 @@ export default function Agenda() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
             {diasSemana.map(dia => {
-              const count = agendamentosSemana.filter(a => new Date(a.start_time).toDateString() === dia.toDateString() && a.status !== 'FALTOU').length
+              const count = semanaFiltrada.filter(a => new Date(a.start_time).toDateString() === dia.toDateString() && a.status !== 'FALTOU').length
               const isSelected = dia.toDateString() === dataAtual.toDateString()
               const isToday = dia.toDateString() === hojeStr
               return (
@@ -326,6 +355,16 @@ export default function Agenda() {
             <LayoutGrid size={18} />
           </button>
         </div>
+        {staffList.length > 0 && (
+          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
+            <button type="button" onClick={() => setStaffFiltro('')} style={chipStyle(!staffFiltro)}>Todas</button>
+            {staffList.map(s => (
+              <button key={s.id} type="button" onClick={() => setStaffFiltro(s.id)} style={chipStyle(staffFiltro === s.id)}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* LEMBRETES PENDENTES */}
@@ -351,7 +390,7 @@ export default function Agenda() {
           modoSemana ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {diasSemana.map(dia => {
-                const items = agendamentosSemana.filter(a => new Date(a.start_time).toDateString() === dia.toDateString())
+                const items = semanaFiltrada.filter(a => new Date(a.start_time).toDateString() === dia.toDateString())
                 return (
                   <div key={dia.toISOString()}>
                     <h3 style={{ fontSize: '14px', color: '#64748b', textTransform: 'capitalize', margin: '0 0 8px', cursor: 'pointer' }} onClick={() => irParaDia(dia)}>
@@ -363,7 +402,7 @@ export default function Agenda() {
                       items.map(item => (
                         <div key={item.id} onClick={() => irParaDia(dia)} style={{ padding: '10px', background: 'white', borderRadius: '8px', marginBottom: '6px', border: '1px solid #e5e7eb', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
                           <span><strong>{new Date(item.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong> · {item.clients?.name}</span>
-                          <span style={{ fontSize: '12px', color: '#64748b' }}>{item.services?.name}</span>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>{item.staff_members?.name ? `${item.staff_members.name} · ` : ''}{item.services?.name}</span>
                         </div>
                       ))
                     )}
@@ -372,7 +411,7 @@ export default function Agenda() {
               })}
             </div>
           ) :
-          agendamentos.length === 0 ? (
+          agendamentos.length === 0 && !staffFiltro ? (
             <div style={{ textAlign: 'center', marginTop: '60px' }}>
               <Calendar size={64} color="#e5e7eb" />
               <h3 style={{ color: '#9ca3af' }}>Dia Livre</h3>
@@ -380,7 +419,9 @@ export default function Agenda() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {agendamentos.map(item => (
+              {agendaDoDia.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#94a3b8' }}>Nenhum horário desta profissional neste dia.</p>
+              ) : agendaDoDia.map(item => (
                 <CardAgendamento
                   key={item.id}
                   agendamento={item}
@@ -457,7 +498,7 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
             <span style={{ background: '#f59e0b', color: 'white', fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}>SOLICITAÇÃO</span>
             <h3 style={{ margin: '4px 0 0 0', color: '#b45309', fontSize: '16px' }}>{agendamento.clients?.name}</h3>
             <span className="hora-grande" style={{ fontSize: '20px', fontWeight: 'bold', color: '#000', display: 'block', marginTop: '-2px' }}>{hora}</span>
-            <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{agendamento.services?.name}</p>
+            <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{agendamento.services?.name}{agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}</p>
           </div>
           <button onClick={abrirWhatsapp} style={{ background: '#25D366', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <MessageCircle size={18} color="white" fill="white" />
@@ -499,7 +540,9 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
           {agendamento.clients?.name}
         </h3>
         {isFaltou && <span style={{ fontSize: '10px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>FALTOU</span>}
-        <p style={{ margin: 0, color: '#6b7280', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agendamento.services?.name}</p>
+        <p style={{ margin: 0, color: '#6b7280', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {agendamento.services?.name}{agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}
+        </p>
 
         {!isPendente && (
           <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
@@ -524,6 +567,17 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
   )
 }
 
+const chipStyle = (active) => ({
+  border: active ? '2px solid #2563eb' : '1px solid #e5e7eb',
+  background: active ? '#eff6ff' : 'white',
+  color: active ? '#1d4ed8' : '#475569',
+  borderRadius: '999px',
+  padding: '6px 12px',
+  fontSize: '12px',
+  fontWeight: 700,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+})
 const btnNavStyle = { background: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', cursor: 'pointer', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '40px', minHeight: '40px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }
 const btnFull = { width: '100%', padding: '15px', borderRadius: '8px', border: 'none', color: 'white', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }
 const btnPagamento = { padding: '15px', borderRadius: '8px', border: '1px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer' }

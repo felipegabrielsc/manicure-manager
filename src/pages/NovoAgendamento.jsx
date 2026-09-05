@@ -105,6 +105,7 @@ export default function NovoAgendamento() {
       businessHours: ctx.businessHours,
       appointments: ctx.appointments,
       blockedSlots: ctx.blockedSlots,
+      staffId: selectedStaffId || null,
     })
 
     if (!validation.valid) {
@@ -112,11 +113,21 @@ export default function NovoAgendamento() {
       return toast.error(validation.reason)
     }
 
-    const { data: rpcCheck, error: rpcErr } = await supabase.rpc('validar_horario_agendamento', {
+    let { data: rpcCheck, error: rpcErr } = await supabase.rpc('validar_horario_agendamento', {
       p_user_id: userId,
       p_start_time: startTime.toISOString(),
       p_duration_minutes: durationMinutes,
+      p_staff_id: selectedStaffId || null,
     })
+    if (rpcErr) {
+      const retry = await supabase.rpc('validar_horario_agendamento', {
+        p_user_id: userId,
+        p_start_time: startTime.toISOString(),
+        p_duration_minutes: durationMinutes,
+      })
+      rpcCheck = retry.data
+      rpcErr = retry.error
+    }
 
     if (!rpcErr && rpcCheck?.valid === false) {
       setLoading(false)

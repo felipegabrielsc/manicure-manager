@@ -111,6 +111,7 @@ export async function checkPendingNotifications(userId) {
     .select('id, start_time, clients(name)')
     .eq('user_id', userId)
     .eq('status', 'PENDENTE')
+    .is('push_pending_sent_at', null)
 
   pendentes?.forEach(p => {
     showLocalNotification(
@@ -126,6 +127,7 @@ export async function checkPendingNotifications(userId) {
     .eq('user_id', userId)
     .eq('status', 'AGENDADO')
     .is('reminder_sent_at', null)
+    .is('push_reminder_sent_at', null)
     .gte('start_time', agora.toISOString())
     .lte('start_time', limite.toISOString())
 

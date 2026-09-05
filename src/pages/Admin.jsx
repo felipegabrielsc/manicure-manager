@@ -17,6 +17,8 @@ export default function Admin() {
   // Lista de Usuários para Gestão
   const [manicures, setManicures] = useState([])
   const [plans, setPlans] = useState([])
+  const [invites, setInvites] = useState([])
+  const [gerando, setGerando] = useState(false)
 
   useEffect(() => {
     checkAdmin()
@@ -41,6 +43,9 @@ export default function Admin() {
 
         const { data: planos } = await supabase.from('subscription_plans').select('*').order('sort_order')
         setPlans(planos || [])
+
+        const { data: convites } = await supabase.from('invites').select('*').order('created_at', { ascending: false }).limit(20)
+        setInvites(convites || [])
             
         if (lista) {
             setManicures(lista)
@@ -70,10 +75,23 @@ export default function Admin() {
       }
   }
 
-  const copiarLinkConvite = () => {
-    const link = `${window.location.origin}/cadastro-vip`
-    navigator.clipboard.writeText(link)
-    toast.success('Link de convite copiado!', { icon: '🎟️' })
+  const gerarConvite = async () => {
+    setGerando(true)
+    const { data, error } = await supabase.rpc('criar_convite', { p_email: null })
+    setGerando(false)
+    if (error || !data?.ok) {
+      return toast.error(data?.reason || 'Erro ao criar convite. Rode a migration 005 no Supabase.')
+    }
+    const link = `${window.location.origin}/cadastro-vip?token=${data.token}`
+    await navigator.clipboard.writeText(link)
+    toast.success('Convite gerado e copiado. Vale 14 dias, uso único.')
+    checkAdmin()
+  }
+
+  const copiarConvite = async (token) => {
+    const link = `${window.location.origin}/cadastro-vip?token=${token}`
+    await navigator.clipboard.writeText(link)
+    toast.success('Link copiado')
   }
 
   const atribuirPlano = async (userId, planId, status) => {
@@ -138,14 +156,34 @@ export default function Admin() {
         </div>
 
         {/* ÁREA DE CONVITE */}
-        <div style={{background:'white', padding:'20px', borderRadius:'16px', marginBottom:'30px', border:'1px solid #e2e8f0', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'15px'}}>
+        <div style={{background:'white', padding:'20px', borderRadius:'16px', marginBottom:'30px', border:'1px solid #e2e8f0'}}>
+            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'15px', marginBottom:'12px'}}>
             <div>
-                <h3 style={{margin:0, color:'#1e293b'}}>Link de Cadastro VIP</h3>
-                <p style={{margin:0, fontSize:'14px', color:'#64748b'}}>Use este link para cadastrar novas manicures.</p>
+                <h3 style={{margin:0, color:'#1e293b'}}>Convites de cadastro</h3>
+                <p style={{margin:0, fontSize:'14px', color:'#64748b'}}>Cada link é de uso único. Sem token, ninguém cria conta.</p>
             </div>
-            <button onClick={copiarLinkConvite} style={{padding:'10px 20px', background:'#2563eb', color:'white', border:'none', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', gap:'8px'}}>
-                <Copy size={18}/> Copiar Link
+            <button onClick={gerarConvite} disabled={gerando} style={{padding:'10px 20px', background:'#2563eb', color:'white', border:'none', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', gap:'8px'}}>
+                <Copy size={18}/> {gerando ? 'Gerando...' : 'Gerar e copiar convite'}
             </button>
+            </div>
+            {invites.length === 0 ? (
+              <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>Nenhum convite ainda.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {invites.map(inv => (
+                  <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', fontSize: '12px', color: '#475569', background: '#f8fafc', padding: '8px 10px', borderRadius: '8px' }}>
+                    <span>
+                      {inv.used_at ? 'Usado' : 'Aberto'} · vale até {new Date(inv.expires_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    {!inv.used_at && (
+                      <button type="button" onClick={() => copiarConvite(inv.token)} style={{ border: 'none', background: '#e2e8f0', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                        Copiar
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
 
         {/* LISTA DE GESTÃO DE BLOQUEIO */}
