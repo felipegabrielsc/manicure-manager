@@ -19,6 +19,9 @@ export default function Admin() {
   const [plans, setPlans] = useState([])
   const [invites, setInvites] = useState([])
   const [gerando, setGerando] = useState(false)
+  const [ativas, setAtivas] = useState(0)
+  const [trialsSemana, setTrialsSemana] = useState([])
+  const [sumidas, setSumidas] = useState([])
 
   useEffect(() => {
     checkAdmin()
@@ -55,6 +58,21 @@ export default function Admin() {
             const receitaReal = lista.reduce((acc, m) => acc + (m.subscription_plans?.price || 0), 0)
             setReceitaSetup(total * 200)
             setRendaMensal(receitaReal || total * 50)
+
+            const agora = Date.now()
+            const seteDias = 7 * 24 * 60 * 60 * 1000
+            setAtivas(lista.filter(m => m.subscription_status === 'active' && !m.is_blocked).length)
+            setTrialsSemana(lista.filter(m => {
+              const status = m.subscription_status || 'trial'
+              if (status !== 'trial' || !m.trial_ends_at) return false
+              const fim = new Date(m.trial_ends_at).getTime()
+              return fim >= agora && fim - agora <= seteDias
+            }))
+            setSumidas(lista.filter(m => {
+              if (m.is_admin) return false
+              const visto = m.last_seen_at ? new Date(m.last_seen_at).getTime() : new Date(m.created_at || 0).getTime()
+              return visto && agora - visto > seteDias
+            }))
         }
     }
     setLoading(false)
@@ -147,12 +165,27 @@ export default function Admin() {
             </div>
             <div style={{background:'white', padding:'25px', borderRadius:'16px', boxShadow:'0 2px 5px rgba(0,0,0,0.05)', display:'flex', alignItems:'center', gap:'20px'}}>
                 <div style={{background:'#f0fdf4', padding:'15px', borderRadius:'12px'}}><Wallet size={30} color="#16a34a"/></div>
-                <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>TOTAL SETUP</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#16a34a'}}>R$ {receitaSetup}</div></div>
+                <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>ASSINATURAS ATIVAS</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#16a34a'}}>{ativas}</div></div>
             </div>
             <div style={{background:'white', padding:'25px', borderRadius:'16px', boxShadow:'0 2px 5px rgba(0,0,0,0.05)', display:'flex', alignItems:'center', gap:'20px'}}>
                 <div style={{background:'#fdf2f8', padding:'15px', borderRadius:'12px'}}><TrendingUp size={30} color="#db2777"/></div>
                 <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>RENDA MENSAL</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#db2777'}}>R$ {rendaMensal}</div></div>
             </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #fde68a' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '14px' }}>Trials que vencem em 7 dias</h3>
+            {trialsSemana.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '13px' }}>Nenhuma esta semana.</p> : trialsSemana.map(m => (
+              <div key={m.id} style={{ fontSize: '13px', padding: '4px 0' }}>{m.business_name || m.email || m.id.slice(0, 8)} · {new Date(m.trial_ends_at).toLocaleDateString('pt-BR')}</div>
+            ))}
+          </div>
+          <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '14px' }}>Sem abrir o app há 7 dias</h3>
+            {sumidas.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '13px' }}>Ninguém sumiu.</p> : sumidas.slice(0, 12).map(m => (
+              <div key={m.id} style={{ fontSize: '13px', padding: '4px 0' }}>{m.business_name || m.email || 'Sem nome'}</div>
+            ))}
+          </div>
         </div>
 
         {/* ÁREA DE CONVITE */}

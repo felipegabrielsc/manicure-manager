@@ -43,6 +43,10 @@ export function hasFeature(profile, featureName) {
 }
 
 export function canOpenPath(profile, pathname) {
+  if (pathname === '/onboarding') return true
+  if (profile?.is_staff) {
+    if (['/equipe', '/planos', '/admin', '/configuracoes'].includes(pathname)) return false
+  }
   if (pathname === '/planos' || pathname === '/configuracoes' || pathname === '/admin') {
     if (pathname === '/admin') return !!profile?.is_admin
     return true

@@ -1,9 +1,10 @@
 // src/pages/Configuracoes.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, Copy, Save, Clock, Globe, User, Lock, Unlock, Loader2, HelpCircle, Bell, Ban, Trash2, ExternalLink, Smartphone } from 'lucide-react'
+import { ArrowLeft, Copy, Save, Clock, Globe, User, Lock, Unlock, Loader2, HelpCircle, Bell, Ban, Trash2, ExternalLink, Smartphone, Download } from 'lucide-react'
 import { subscribeToPush, unsubscribePush, getPushCapabilities } from '../utils/notifications'
 import { toTimeInput } from '../utils/dates'
+import { exportClientsCsv } from '../utils/exportReport'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
@@ -222,6 +223,13 @@ export default function Configuracoes() {
     }
   }
 
+  async function exportarClientes() {
+    const { data, error } = await supabase.from('clients').select('name, phone, type, monthly_fee, monthly_due_day, loyalty_visits').order('name')
+    if (error) return toast.error('Não foi possível exportar')
+    exportClientsCsv(data || [])
+    toast.success('CSV baixado')
+  }
+
   if (loading) return <div style={{padding:'20px'}}>Carregando...</div>
 
   const pushCaps = getPushCapabilities()
@@ -379,6 +387,12 @@ export default function Configuracoes() {
         </div>
 
         {/* CARD HORÁRIOS RESPONSIVO */}
+        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Download size={20} /> Seus dados (LGPD)</h3>
+          <p style={{ color: '#64748b', fontSize: '13px' }}>Baixe a lista de clientes (nome, WhatsApp, tipo e fidelidade) para backup ou pedido da cliente.</p>
+          <button type="button" onClick={exportarClientes} style={{ padding: '12px 16px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Baixar CSV das clientes</button>
+        </div>
+
         <div id="card-horarios" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd' }}>
             <h3 style={{ marginTop: 0, color: '#16a34a', display:'flex', alignItems:'center', gap:'10px' }}><Clock size={20}/> Horários</h3>
             <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>Uma linha por dia: aberto, fecha e se atende.</p>

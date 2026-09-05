@@ -32,6 +32,7 @@ export default function AgendamentoPublico() {
   const [cupomCodigo, setCupomCodigo] = useState('')
   const [slotsDisponiveis, setSlotsDisponiveis] = useState([])
   const [carregandoSlots, setCarregandoSlots] = useState(false)
+  const [esperaEnviada, setEsperaEnviada] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -161,6 +162,21 @@ export default function AgendamentoPublico() {
     setEtapa(3)
   }
 
+  async function entrarEspera() {
+    if (!nome || phone.length < 14) return toast.error('Preencha nome e WhatsApp')
+    const { data: result, error } = await supabase.rpc('entrar_lista_espera', {
+      p_user_id: userId,
+      p_name: nome,
+      p_phone: phone,
+      p_service_id: servicoId || null,
+      p_preferred_date: data || null,
+      p_note: null,
+    })
+    if (error || !result?.ok) return toast.error(result?.reason || 'Não foi possível entrar na espera. Peça para a manicure rodar o SQL 009.')
+    setEsperaEnviada(true)
+    toast.success('Você entrou na lista de espera!')
+  }
+
   const minDate = toDateInputValue()
 
   if (agendaAberta === null) {
@@ -225,7 +241,14 @@ export default function AgendamentoPublico() {
                 {carregandoSlots ? (
                   <p style={{ color: '#64748b', fontSize: '14px' }}>Carregando horários...</p>
                 ) : slotsDisponiveis.length === 0 ? (
-                  <p style={{ color: '#dc2626', fontSize: '14px' }}>Nenhum horário livre nesta data. Escolha outro dia.</p>
+                  <div>
+                    <p style={{ color: '#dc2626', fontSize: '14px' }}>Nenhum horário livre nesta data.</p>
+                    {esperaEnviada ? (
+                      <p style={{ color: '#16a34a', fontSize: '14px' }}>Você já está na lista de espera. A manicure avisa no WhatsApp.</p>
+                    ) : (
+                      <button type="button" onClick={entrarEspera} style={{ ...btn, background: '#0f172a', fontSize: '15px' }}>Entrar na lista de espera</button>
+                    )}
+                  </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                     {slotsDisponiveis.map(slot => (

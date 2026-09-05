@@ -22,6 +22,13 @@ describe('entitlements', () => {
     expect(canOpenPath(profile, '/planos')).toBe(true)
     expect(canOpenPath(profile, '/')).toBe(false)
   })
+
+  it('profissional da equipe não abre Equipe nem Admin', () => {
+    const profile = { is_staff: true, salon_owner_id: 'x', subscription_status: 'active' }
+    expect(canOpenPath(profile, '/')).toBe(true)
+    expect(canOpenPath(profile, '/equipe')).toBe(false)
+    expect(canOpenPath(profile, '/admin')).toBe(false)
+  })
 })
 
 describe('dates', () => {

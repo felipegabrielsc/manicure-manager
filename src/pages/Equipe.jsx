@@ -14,6 +14,7 @@ export default function Equipe() {
   const [staffNome, setStaffNome] = useState('')
   const [staffPhone, setStaffPhone] = useState('')
   const [staffLocation, setStaffLocation] = useState('')
+  const [staffComissao, setStaffComissao] = useState('0')
 
   useEffect(() => { init() }, [])
 
@@ -52,14 +53,30 @@ export default function Equipe() {
       name: staffNome,
       phone: staffPhone.replace(/\D/g, ''),
       location_id: staffLocation || null,
+      commission_percent: parseFloat(String(staffComissao).replace(',', '.')) || 0,
     })
     if (error) toast.error('Erro ao adicionar profissional')
-    else { toast.success('Profissional adicionada!'); setStaffNome(''); setStaffPhone(''); init() }
+    else { toast.success('Profissional adicionada!'); setStaffNome(''); setStaffPhone(''); setStaffComissao('0'); init() }
   }
 
   async function removerLocation(id) {
     if (!window.confirm('Excluir unidade?')) return
     await supabase.from('locations').delete().eq('id', id)
+    init()
+  }
+
+  async function convidarStaff(staffId) {
+    const { data, error } = await supabase.rpc('criar_convite_staff', { p_staff_id: staffId, p_email: null })
+    if (error || !data?.ok) return toast.error(data?.reason || 'Rode a migration 009 no Supabase.')
+    const link = `${window.location.origin}/cadastro-vip?token=${data.token}`
+    await navigator.clipboard.writeText(link)
+    toast.success('Link de acesso copiado (vale 14 dias)')
+  }
+
+  async function salvarComissao(id, valor) {
+    const pct = parseFloat(String(valor).replace(',', '.')) || 0
+    await supabase.from('staff_members').update({ commission_percent: pct }).eq('id', id)
+    toast.success('Comissão salva')
     init()
   }
 
@@ -109,6 +126,7 @@ export default function Equipe() {
           <form onSubmit={addStaff} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
             <input placeholder="Nome da profissional" value={staffNome} onChange={e => setStaffNome(e.target.value)} style={inp} />
             <input placeholder="WhatsApp (opcional)" value={staffPhone} onChange={e => setStaffPhone(e.target.value)} style={inp} />
+            <input placeholder="Comissão % (ex: 40)" value={staffComissao} onChange={e => setStaffComissao(e.target.value)} style={inp} inputMode="decimal" />
             {locations.length > 0 && (
               <select value={staffLocation} onChange={e => setStaffLocation(e.target.value)} style={inp}>
                 <option value="">Sem unidade vinculada</option>
@@ -118,12 +136,18 @@ export default function Equipe() {
             <button type="submit" style={{ ...btn, background: '#7c3aed' }}><Plus size={16} /> Adicionar profissional</button>
           </form>
           {staff.length === 0 ? <p style={{ color: '#94a3b8' }}>Nenhuma profissional cadastrada.</p> : staff.map(s => (
-            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', background: '#f8fafc', borderRadius: '8px', marginBottom: '6px' }}>
-              <div>
+            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '10px', background: '#f8fafc', borderRadius: '8px', marginBottom: '6px', gap: '8px' }}>
+              <div style={{ flex: 1 }}>
                 <strong>{s.name}</strong>
                 {s.locations?.name && <span style={{ display: 'block', fontSize: '12px', color: '#64748b' }}>{s.locations.name}</span>}
+                {s.auth_user_id && <span style={{ display: 'block', fontSize: '11px', color: '#16a34a', fontWeight: 'bold' }}>Tem login</span>}
+                <label style={{ fontSize: '11px', color: '#64748b' }}>Comissão %</label>
+                <input defaultValue={s.commission_percent || 0} onBlur={e => salvarComissao(s.id, e.target.value)} style={{ ...inp, padding: '6px', marginTop: '4px' }} />
               </div>
-              <button onClick={() => removerStaff(s.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={16} /></button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <button type="button" onClick={() => convidarStaff(s.id)} style={btnMini}>Login</button>
+                <button onClick={() => removerStaff(s.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={16} /></button>
+              </div>
             </div>
           ))}
         </div>

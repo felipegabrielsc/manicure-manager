@@ -73,6 +73,26 @@ export function exportToPrint(movimentacoes, mesFormatado, totais) {
   w.document.close()
 }
 
+export function exportClientsCsv(clientes) {
+  const header = ['Nome', 'WhatsApp', 'Tipo', 'Mensalidade', 'Vence dia', 'Visitas fidelidade']
+  const rows = (clientes || []).map(c => [
+    `"${String(c.name || '').replace(/"/g, '""')}"`,
+    c.phone || '',
+    c.type || 'AVULSO',
+    c.monthly_fee != null ? Number(c.monthly_fee).toFixed(2).replace('.', ',') : '',
+    c.monthly_due_day || '',
+    c.loyalty_visits || 0,
+  ])
+  const csv = [header, ...rows].map(r => r.join(';')).join('\n')
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `clientes-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function calcularDesconto(preco, discountType, discountValue) {
   if (discountType === 'percent') {
     return Math.min(preco, preco * (discountValue / 100))

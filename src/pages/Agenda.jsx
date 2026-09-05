@@ -10,8 +10,11 @@ import "driver.js/dist/driver.css";
 import { getWeekDays, fetchWeekAppointments, fetchSchedulingContext, validateBookingSlot, getServiceDuration } from '../utils/scheduling'
 import { incrementLoyaltyVisit } from '../utils/loyalty'
 import { openSupportWhatsApp } from '../config/app'
+import { openWhatsApp } from '../utils/whatsapp'
+import { useSessionProfile } from '../context/SessionProfile'
 
 export default function Agenda() {
+  const { profile } = useSessionProfile()
   const [dataAtual, setDataAtual] = useState(new Date())
   const [agendamentos, setAgendamentos] = useState([])
   const [agendamentosSemana, setAgendamentosSemana] = useState([])
@@ -29,6 +32,12 @@ export default function Agenda() {
   const [novaDataHora, setNovaDataHora] = useState('')
   const [pagamentoModalOpen, setPagamentoModalOpen] = useState(false)
   const [idParaConcluir, setIdParaConcluir] = useState(null)
+  const [retornoAberto, setRetornoAberto] = useState(false)
+  const [aptRetorno, setAptRetorno] = useState(null)
+  const [motivoOpen, setMotivoOpen] = useState(false)
+  const [motivoTipo, setMotivoTipo] = useState('FALTOU')
+  const [motivoTexto, setMotivoTexto] = useState('')
+  const [espera, setEspera] = useState([])
 
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
   const [acaoConfirmacao, setAcaoConfirmacao] = useState(null)
@@ -40,7 +49,7 @@ export default function Agenda() {
   // Busca agendamentos quando muda a data
   useEffect(() => { buscarAgendamentos() }, [dataAtual])
   useEffect(() => { carregarSemana() }, [dataAtual])
-  useEffect(() => { carregarLembretes() }, [])
+  useEffect(() => { carregarLembretes(); carregarEspera() }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -48,8 +57,9 @@ export default function Agenda() {
       setUserId(user.id)
       const { data } = await supabase.from('staff_members').select('id, name').eq('active', true).order('name')
       setStaffList(data || [])
+      if (profile?.staff_member_id) setStaffFiltro(profile.staff_member_id)
     })
-  }, [])
+  }, [profile?.staff_member_id])
 
   async function carregarSemana() {
     const data = await fetchWeekAppointments(supabase, dataAtual)
@@ -77,6 +87,20 @@ export default function Agenda() {
       .order('start_time')
 
     setLembretesPendentes(data || [])
+  }
+
+  async function carregarEspera() {
+    const { data, error } = await supabase.from('waitlist').select('*, services(name)').eq('status', 'ABERTA').order('created_at', { ascending: true })
+    if (!error) setEspera(data || [])
+  }
+
+  async function avisarEspera(item) {
+    const link = `${window.location.origin}/agendar/${userId}`
+    const ok = openWhatsApp(item.phone, `Oi ${item.name}! Abriu um horário na agenda${item.services?.name ? ` para ${item.services.name}` : ''}. Pode marcar aqui: ${link}`)
+    if (!ok) return toast.error('Sem WhatsApp nesta espera')
+    await supabase.from('waitlist').update({ status: 'AVISADA', notified_at: new Date().toISOString() }).eq('id', item.id)
+    toast.success('Aviso enviado')
+    carregarEspera()
   }
 
   async function enviarLembrete(agendamento) {
@@ -130,6 +154,7 @@ export default function Agenda() {
   }
 
   const handleToggleClick = (agendamento) => {
+    if (agendamento.status === 'FALTOU' || agendamento.status === 'CANCELADO') return
     if (agendamento.status === 'CONCLUIDO') {
       toggleStatus(agendamento.id, 'CONCLUIDO', null)
     } else {
@@ -154,8 +179,13 @@ export default function Agenda() {
         toast('Essa visita vai para a mensalidade. Cobra no vencimento (padrão: dia 10 do mês seguinte).', { icon: '📅' })
       }
     }
+    const aptDone = agendamentos.find(a => a.id === idParaConcluir)
     setPagamentoModalOpen(false)
     setIdParaConcluir(null)
+    if (aptDone) {
+      setAptRetorno(aptDone)
+      setRetornoAberto(true)
+    }
   }
 
   async function toggleStatus(id, currentStatus, metodoPagamento) {
@@ -216,17 +246,54 @@ export default function Agenda() {
     else { toast.error('Erro ao remarcar') }
   }
 
-  const marcarFalta = async () => {
+  const marcarStatusComMotivo = async () => {
     if (!agendamentoSelecionado) return
-    const { error } = await supabase.from('appointments').update({ status: 'FALTOU' }).eq('id', agendamentoSelecionado.id)
+    const status = motivoTipo
+    const { error } = await supabase.from('appointments').update({
+      status,
+      cancellation_reason: motivoTexto.trim() || null,
+    }).eq('id', agendamentoSelecionado.id)
     if (!error) {
-      toast('Falta registrada!', { icon: '🚫' });
-      buscarAgendamentos();
-      fecharOpcoes();
-      setAlertModal({ isOpen: false });
+      toast(status === 'FALTOU' ? 'Falta registrada' : 'Cancelado', { icon: status === 'FALTOU' ? '🚫' : '↩️' })
+      const tel = agendamentoSelecionado.clients?.phone
+      if (tel) {
+        openWhatsApp(tel, `Oi ${agendamentoSelecionado.clients?.name}, seu horário foi ${status === 'FALTOU' ? 'marcado como falta' : 'cancelado'}${motivoTexto.trim() ? `: ${motivoTexto.trim()}` : ''}.`)
+      }
+      buscarAgendamentos()
+      fecharOpcoes()
+      setMotivoOpen(false)
+      setMotivoTexto('')
+      setAlertModal({ isOpen: false })
     } else {
-      toast.error('Erro ao marcar falta');
+      toast.error('Não foi possível atualizar')
     }
+  }
+
+  const marcarRetorno = async (dias) => {
+    if (!aptRetorno || !userId) return
+    const start = new Date(aptRetorno.start_time)
+    start.setDate(start.getDate() + dias)
+    const { error } = await supabase.from('appointments').insert({
+      client_id: aptRetorno.client_id,
+      service_id: aptRetorno.service_id,
+      start_time: start.toISOString(),
+      agreed_price: aptRetorno.agreed_price,
+      status: 'AGENDADO',
+      user_id: userId,
+      staff_id: aptRetorno.staff_id || null,
+    })
+    if (error) toast.error(error.message)
+    else {
+      toast.success(`Retorno em ${dias} dias marcado`)
+      const tel = aptRetorno.clients?.phone
+      if (tel) {
+        openWhatsApp(tel, `Oi ${aptRetorno.clients?.name}! Já deixei seu retorno: ${start.toLocaleDateString('pt-BR')} às ${start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)
+      }
+      buscarAgendamentos()
+      carregarSemana()
+    }
+    setRetornoAberto(false)
+    setAptRetorno(null)
   }
 
   const mudarDia = (d) => { const n = new Date(dataAtual); n.setDate(n.getDate() + d); setDataAtual(n) }
@@ -277,6 +344,32 @@ export default function Agenda() {
         </div>
       )}
 
+      {retornoAberto && aptRetorno && (
+        <div style={overlayStyle}>
+          <div style={modalBoxStyle}>
+            <h3 style={{ marginTop: 0 }}>Marcar retorno?</h3>
+            <p style={{ color: '#64748b', fontSize: '14px' }}>{aptRetorno.clients?.name} no mesmo horário daqui a:</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[15, 21, 30].map(d => (
+                <button key={d} onClick={() => marcarRetorno(d)} style={{ ...btnPagamento, flex: 1 }}> {d} dias</button>
+              ))}
+            </div>
+            <button onClick={() => { setRetornoAberto(false); setAptRetorno(null) }} style={{ width: '100%', padding: '12px', marginTop: '12px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Agora não</button>
+          </div>
+        </div>
+      )}
+
+      {motivoOpen && (
+        <div style={overlayStyle}>
+          <div style={modalBoxStyle}>
+            <h3 style={{ marginTop: 0 }}>{motivoTipo === 'FALTOU' ? 'Registrar falta' : 'Cancelar horário'}</h3>
+            <textarea value={motivoTexto} onChange={e => setMotivoTexto(e.target.value)} placeholder="Motivo (opcional)" rows={3} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+            <button onClick={marcarStatusComMotivo} style={{ ...btnFull, background: '#b91c1c', marginTop: '10px' }}>Confirmar</button>
+            <button onClick={() => setMotivoOpen(false)} style={{ width: '100%', padding: '12px', marginTop: '8px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Fechar</button>
+          </div>
+        </div>
+      )}
+
       {/* MODAL GERENCIAMENTO */}
       {editModalOpen && agendamentoSelecionado && (
         <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) fecharOpcoes() }}>
@@ -304,13 +397,16 @@ export default function Agenda() {
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-              <button onClick={() => { setAcaoConfirmacao(() => marcarFalta); setAlertModal({ isOpen: true, type: 'confirm', title: 'Falta?', message: 'Registrar falta?' }) }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: '#fef2f2', color: '#b91c1c', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+              <button onClick={() => { setMotivoTipo('FALTOU'); setMotivoTexto(''); setMotivoOpen(true) }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: 'none', background: '#fef2f2', color: '#b91c1c', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
                 <AlertTriangle size={18} /> Faltou
               </button>
-              <button onClick={() => { setAcaoConfirmacao(() => deletarAgendamento); setAlertModal({ isOpen: true, type: 'confirm', title: 'Excluir?', message: 'Tem certeza?' }) }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #dc2626', background: 'white', color: '#dc2626', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                <Trash2 size={18} /> Excluir
+              <button onClick={() => { setMotivoTipo('CANCELADO'); setMotivoTexto(''); setMotivoOpen(true) }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #64748b', background: 'white', color: '#334155', fontWeight: 'bold', cursor: 'pointer' }}>
+                Cancelar
               </button>
             </div>
+            <button onClick={() => { setAcaoConfirmacao(() => deletarAgendamento); setAlertModal({ isOpen: true, type: 'confirm', title: 'Excluir?', message: 'Tem certeza?' }) }} style={{ width: '100%', marginTop: '10px', padding: '12px', borderRadius: '8px', border: '1px solid #dc2626', background: 'white', color: '#dc2626', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                <Trash2 size={18} /> Excluir
+            </button>
           </div>
         </div>
       )}
@@ -339,7 +435,7 @@ export default function Agenda() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
             {diasSemana.map(dia => {
-              const count = semanaFiltrada.filter(a => new Date(a.start_time).toDateString() === dia.toDateString() && a.status !== 'FALTOU').length
+              const count = semanaFiltrada.filter(a => new Date(a.start_time).toDateString() === dia.toDateString() && a.status !== 'FALTOU' && a.status !== 'CANCELADO').length
               const isSelected = dia.toDateString() === dataAtual.toDateString()
               const isToday = dia.toDateString() === hojeStr
               return (
@@ -397,7 +493,19 @@ export default function Agenda() {
         </div>
       )}
 
-      {/* LISTA */}
+      {espera.length > 0 && (
+        <div className="page-inner" style={{ padding: '12px 15px' }}>
+          <div style={{ background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: '12px', padding: '12px' }}>
+            <div style={{ fontWeight: 'bold', color: '#1d4ed8', marginBottom: '8px' }}>Lista de espera ({espera.length})</div>
+            {espera.slice(0, 5).map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: '13px', borderTop: '1px solid #dbeafe' }}>
+                <span>{item.name} · {item.services?.name || 'Serviço'}{item.preferred_date ? ` · ${new Date(`${item.preferred_date}T12:00:00`).toLocaleDateString('pt-BR')}` : ''}</span>
+                <button onClick={() => avisarEspera(item)} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontWeight: 'bold', cursor: 'pointer' }}>Avisar</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="page-inner" style={{ padding: '15px' }}>
         {loading ? <div style={{ textAlign: 'center', marginTop: '40px', color: '#999' }}>Carregando agenda...</div> :
           modoSemana ? (
@@ -472,18 +580,31 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
   const isConcluido = agendamento.status === 'CONCLUIDO'
   const isPendente = agendamento.status === 'PENDENTE'
   const isFaltou = agendamento.status === 'FALTOU'
+  const isCancelado = agendamento.status === 'CANCELADO'
 
   const aprovarAgendamento = async (e) => {
     e.stopPropagation()
     const { error } = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
-    if (!error) { toast.success('Confirmado!', { icon: '✅' }); onRefresh?.() }
+    if (!error) {
+      toast.success('Confirmado!', { icon: '✅' })
+      openWhatsApp(agendamento.clients?.phone, `Olá ${agendamento.clients?.name}, seu horário às ${hora} está confirmado!`)
+      onRefresh?.()
+    }
   }
 
   const recusarAgendamento = async (e) => {
     e.stopPropagation()
-    if (!window.confirm("Recusar solicitação?")) return;
-    const { error } = await supabase.from('appointments').delete().eq('id', agendamento.id)
-    if (!error) { toast('Recusado', { icon: '🗑️' }); onRefresh?.() }
+    const motivo = window.prompt('Motivo do recuso (opcional):', '') 
+    if (motivo === null) return
+    const { error } = await supabase.from('appointments').update({
+      status: 'CANCELADO',
+      cancellation_reason: motivo || 'Recusado',
+    }).eq('id', agendamento.id)
+    if (!error) {
+      toast('Pedido recusado', { icon: '🗑️' })
+      openWhatsApp(agendamento.clients?.phone, `Olá ${agendamento.clients?.name}, não consegui confirmar o horário das ${hora}${motivo ? `: ${motivo}` : ''}. Podemos remarcar?`)
+      onRefresh?.()
+    }
   }
 
   const abrirWhatsapp = (e) => {
@@ -532,7 +653,7 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
   // CARD PADRÃO
   let borderLeftColor = '#16a34a'
   if (isMensalista) borderLeftColor = '#7e22ce'
-  else if (isFaltou) borderLeftColor = '#ef4444'
+  else if (isFaltou || isCancelado) borderLeftColor = '#ef4444'
 
   return (
     <div className="fade-in" style={{ background: 'white', borderRadius: '12px', padding: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e5e7eb', borderLeft: `6px solid ${borderLeftColor}`, display: 'flex', alignItems: 'center', opacity: isConcluido ? 0.6 : 1, position: 'relative' }}>
@@ -552,7 +673,8 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
         <h3 style={{ margin: '0 0 2px 0', fontSize: '16px', textDecoration: isConcluido ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {agendamento.clients?.name}
         </h3>
-        {isFaltou && <span style={{ fontSize: '10px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>FALTOU</span>}
+        {isFaltou && <span style={{ fontSize: '10px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>FALTOU{agendamento.cancellation_reason ? ` · ${agendamento.cancellation_reason}` : ''}</span>}
+        {isCancelado && <span style={{ fontSize: '10px', background: '#64748b', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>CANCELADO{agendamento.cancellation_reason ? ` · ${agendamento.cancellation_reason}` : ''}</span>}
         <p style={{ margin: 0, color: '#6b7280', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {agendamento.services?.name}{agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}
         </p>

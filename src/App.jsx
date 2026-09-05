@@ -25,11 +25,13 @@ import Estoque from './pages/Estoque'
 import Fidelidade from './pages/Fidelidade'
 import Equipe from './pages/Equipe'
 import Planos from './pages/Planos'
+import Onboarding from './pages/Onboarding'
 import AppLayout from './components/AppLayout'
 import { SessionProfileContext } from './context/SessionProfile'
 import { checkPendingNotifications } from './utils/notifications'
 
-const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
+const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, salon_owner_id, onboarding_done, last_seen_at, business_name, subscription_plans(name, price, features)'
+const PROFILE_SELECT_FALLBACK = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -45,10 +47,39 @@ export default function App() {
       setProfileChecked(true)
       return
     }
-    const { data } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', userId).single()
-    setProfile(data || null)
-    setBloqueado(data?.is_blocked === true)
+    let { data, error } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', userId).single()
+    if (error) {
+      const retry = await supabase.from('profiles').select(PROFILE_SELECT_FALLBACK).eq('id', userId).single()
+      data = retry.data
+    }
+
+    let assembled = data || null
+    if (assembled?.salon_owner_id) {
+      const { data: owner } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', assembled.salon_owner_id).single()
+      const { data: sm } = await supabase.from('staff_members').select('id').eq('auth_user_id', userId).maybeSingle()
+      assembled = {
+        ...(owner || {}),
+        id: userId,
+        is_admin: false,
+        is_staff: true,
+        salon_owner_id: assembled.salon_owner_id,
+        workspace_id: assembled.salon_owner_id,
+        staff_member_id: sm?.id || null,
+        onboarding_done: true,
+        is_blocked: assembled.is_blocked === true || owner?.is_blocked === true,
+      }
+    } else if (assembled) {
+      assembled = {
+        ...assembled,
+        is_staff: false,
+        workspace_id: userId,
+      }
+    }
+
+    setProfile(assembled)
+    setBloqueado(assembled?.is_blocked === true)
     setProfileChecked(true)
+    supabase.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', userId).then(() => {})
   }
 
   useEffect(() => {
@@ -112,7 +143,9 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" />} />
             </>
           ) : (
-            <Route element={<AppLayout />}>
+            <>
+              <Route path="/onboarding" element={<Onboarding />} />
+              <Route element={<AppLayout />}>
               <Route path="/" element={<Agenda />} />
               <Route path="/novo" element={<NovoAgendamento />} />
               <Route path="/clientes" element={<Clientes />} />
@@ -125,7 +158,8 @@ export default function App() {
               <Route path="/planos" element={<Planos />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="*" element={<Navigate to="/" />} />
-            </Route>
+              </Route>
+            </>
           )}
         </Routes>
       </div>

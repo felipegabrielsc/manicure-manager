@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Trash2, PieChart, HelpCircle, Download, Printer, Target, Package } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Trash2, PieChart, HelpCircle, Download, Printer, Target, Package, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
@@ -9,6 +9,7 @@ import 'driver.js/dist/driver.css'
 import { exportToCsv, exportToPrint } from '../utils/exportReport'
 import { formatCivilDate, money, monthRangeLocal, monthlyDueDate, toDateInputValue } from '../utils/dates'
 import toast from 'react-hot-toast'
+import { openWhatsApp } from '../utils/whatsapp'
 
 const METODOS = ['PIX', 'DINHEIRO', 'CARTAO']
 const FILTRO_LABEL = {
@@ -32,6 +33,7 @@ export default function Financeiro() {
   const [dataAtual, setDataAtual] = useState(new Date())
   const [todasMovimentacoes, setTodasMovimentacoes] = useState([])
   const [mensalistasPendentes, setMensalistasPendentes] = useState([])
+  const [comissoes, setComissoes] = useState([])
   const [filtroAtivo, setFiltroAtivo] = useState('TODOS')
   const [filtroPagamento, setFiltroPagamento] = useState('TODOS')
   const [showForm, setShowForm] = useState(false)
@@ -77,7 +79,7 @@ export default function Financeiro() {
 
     const { data: agendamentos } = await supabase
       .from('appointments')
-      .select('id, agreed_price, start_time, client_id, payment_method, clients (name, type), services (name)')
+      .select('id, agreed_price, start_time, client_id, payment_method, staff_id, staff_members (name, commission_percent), clients (name, type), services (name)')
       .gte('start_time', start.toISOString())
       .lte('start_time', end.toISOString())
       .eq('status', 'CONCLUIDO')
@@ -85,7 +87,7 @@ export default function Financeiro() {
     const lookback = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 2, 1)
     const { data: agendamentosCobranca } = await supabase
       .from('appointments')
-      .select('id, agreed_price, start_time, client_id, payment_method, clients (id, name, type, monthly_fee, monthly_due_day, monthly_due_offset)')
+      .select('id, agreed_price, start_time, client_id, payment_method, clients (id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset)')
       .gte('start_time', lookback.toISOString())
       .lte('start_time', end.toISOString())
       .eq('status', 'CONCLUIDO')
@@ -173,6 +175,20 @@ export default function Financeiro() {
         }))
     )
 
+    const porStaff = {}
+    ;(agendamentos || []).forEach(a => {
+      if (!a.staff_id || a.payment_method === 'MENSALIDADE') return
+      const pct = Number(a.staff_members?.commission_percent) || 0
+      if (pct <= 0) return
+      if (!porStaff[a.staff_id]) {
+        porStaff[a.staff_id] = { name: a.staff_members?.name || 'Profissional', bruto: 0, comissao: 0, pct }
+      }
+      const valor = Number(a.agreed_price) || 0
+      porStaff[a.staff_id].bruto += valor
+      porStaff[a.staff_id].comissao += valor * (pct / 100)
+    })
+    setComissoes(Object.values(porStaff))
+
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: goal } = await supabase.from('financial_goals').select('target_amount')
@@ -247,6 +263,13 @@ export default function Financeiro() {
     setMetodoPagamento('PIX')
     setDataLancamento(toDateInputValue())
     setShowForm(true)
+  }
+
+  function cobrarWhatsApp(cliente) {
+    const valor = cliente.monthly_fee || cliente.valorServicos || 0
+    const venc = cliente.vencimento ? cliente.vencimento.toLocaleDateString('pt-BR') : `dia ${cliente.monthly_due_day || 10}`
+    const ok = openWhatsApp(cliente.phone, `Oi ${cliente.name}! Sua mensalidade vence em ${venc}, no valor de R$ ${money(valor)}. Pode pagar por PIX quando puder 💜`)
+    if (!ok) toast.error('Cliente sem WhatsApp no cadastro')
   }
 
   function abrirCobrancaRapida(cliente) {
@@ -487,10 +510,27 @@ export default function Financeiro() {
                       {cliente.monthly_fee ? ` · R$ ${money(cliente.monthly_fee)}` : ''}
                     </span>
                   </div>
-                  <button onClick={() => abrirCobrancaRapida(cliente)} style={{ background: '#6610f2', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Receber</button>
+                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                    <button type="button" onClick={() => cobrarWhatsApp(cliente)} style={{ background: '#25D366', color: 'white', border: 'none', padding: '8px 10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }} title="WhatsApp">
+                      <MessageCircle size={16} />
+                    </button>
+                    <button onClick={() => abrirCobrancaRapida(cliente)} style={{ background: '#6610f2', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Receber</button>
+                  </div>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {comissoes.length > 0 && !showForm && (
+          <div style={{ marginBottom: '24px' }}>
+            <h3 style={{ color: '#0f766e', borderBottom: '2px solid #0f766e', paddingBottom: '5px' }}>Comissão da equipe</h3>
+            {comissoes.map(c => (
+              <div key={c.name} style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #99f6e4', marginBottom: '8px', display: 'flex', justifyContent: 'space-between' }}>
+                <span><strong>{c.name}</strong> · {c.pct}%</span>
+                <span style={{ fontWeight: 'bold', color: '#0f766e' }}>R$ {money(c.comissao)} <small style={{ color: '#64748b' }}>(de R$ {money(c.bruto)})</small></span>
+              </div>
+            ))}
           </div>
         )}
 
