@@ -37,6 +37,28 @@ export function money(value) {
   return Number(value || 0).toFixed(2)
 }
 
+export function lastDayOfMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate()
+}
+
+export function clampDueDay(year, monthIndex, dueDay) {
+  const last = lastDayOfMonth(year, monthIndex)
+  const n = Number(dueDay)
+  if (!n || n < 1) return last
+  return Math.min(n, last)
+}
+
+/** Vencimento da mensalidade a partir do mês em que os serviços foram feitos. */
+export function monthlyDueDate(serviceYear, serviceMonthIndex, dueDay = 10, offsetMonths = 1) {
+  const due = new Date(serviceYear, serviceMonthIndex + Number(offsetMonths || 0), 1)
+  const day = clampDueDay(due.getFullYear(), due.getMonth(), dueDay)
+  return new Date(due.getFullYear(), due.getMonth(), day)
+}
+
+export function serviceMonthForDue(viewDate, offsetMonths = 1) {
+  return new Date(viewDate.getFullYear(), viewDate.getMonth() - Number(offsetMonths || 0), 1)
+}
+
 /** Postgres time (`09:00:00`) → valor válido para `<input type="time">`. */
 export function toTimeInput(value, fallback = '09:00') {
   if (value == null || value === '') return fallback

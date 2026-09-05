@@ -7,7 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { exportToCsv, exportToPrint } from '../utils/exportReport'
-import { formatCivilDate, money, monthRangeLocal, toDateInputValue } from '../utils/dates'
+import { formatCivilDate, money, monthRangeLocal, monthlyDueDate, toDateInputValue } from '../utils/dates'
 import toast from 'react-hot-toast'
 
 const METODOS = ['PIX', 'DINHEIRO', 'CARTAO']
@@ -33,6 +33,7 @@ export default function Financeiro() {
   const [todasMovimentacoes, setTodasMovimentacoes] = useState([])
   const [mensalistasPendentes, setMensalistasPendentes] = useState([])
   const [filtroAtivo, setFiltroAtivo] = useState('TODOS')
+  const [filtroPagamento, setFiltroPagamento] = useState('TODOS')
   const [showForm, setShowForm] = useState(false)
   const [modal, setModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
   const [idParaExcluir, setIdParaExcluir] = useState(null)
@@ -65,7 +66,7 @@ export default function Financeiro() {
         { element: '#fin-nav', popover: { title: 'Navegação', description: 'Use as setas para trocar de mês.' } },
         { element: '#fin-grafico', popover: { title: 'Gráfico', description: 'Entradas, saídas e lucro do filtro atual.' } },
         { element: '#fin-novo', popover: { title: 'Lançamento', description: 'Despesa, receita extra ou venda de produto do estoque.' } },
-        { element: '#fin-filtros', popover: { title: 'Filtros', description: 'Separe serviços, produtos, mensalidades e despesas.' } },
+        { element: '#fin-filtros', popover: { title: 'Filtros', description: 'Separe serviços, produtos, mensalidades, despesas e a forma de pagamento.' } },
       ],
     }).drive()
   }
@@ -78,6 +79,14 @@ export default function Financeiro() {
       .from('appointments')
       .select('id, agreed_price, start_time, client_id, payment_method, clients (name, type), services (name)')
       .gte('start_time', start.toISOString())
+      .lte('start_time', end.toISOString())
+      .eq('status', 'CONCLUIDO')
+
+    const lookback = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 2, 1)
+    const { data: agendamentosCobranca } = await supabase
+      .from('appointments')
+      .select('id, agreed_price, start_time, client_id, payment_method, clients (id, name, type, monthly_fee, monthly_due_day, monthly_due_offset)')
+      .gte('start_time', lookback.toISOString())
       .lte('start_time', end.toISOString())
       .eq('status', 'CONCLUIDO')
 
@@ -94,15 +103,8 @@ export default function Financeiro() {
       ?.filter(t => t.type === 'RECEITA' && t.client_id)
       .map(t => t.client_id) || []
 
-    const contagemServicosMensalistas = {}
-    agendamentos?.forEach(a => {
-      if (a.clients?.type === 'MENSALISTA') {
-        contagemServicosMensalistas[a.client_id] = (contagemServicosMensalistas[a.client_id] || 0) + 1
-      }
-    })
-
     const agendaFormatada = agendamentos
-      ?.filter(a => Number(a.agreed_price) > 0)
+      ?.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE')
       .map(a => ({
         id: `agenda-${a.id}`,
         description: `${a.clients?.name} - ${a.services?.name}`,
@@ -125,12 +127,50 @@ export default function Financeiro() {
     listaFinal.sort((a, b) => String(b.date).localeCompare(String(a.date)))
     setTodasMovimentacoes(listaFinal)
 
+    const viewY = dataAtual.getFullYear()
+    const viewM = dataAtual.getMonth()
+    const porCliente = {}
+
+    ;(agendamentosCobranca || []).forEach(a => {
+      const c = a.clients
+      if (!c?.id) return
+      const ehMensal = a.payment_method === 'MENSALIDADE' || c.type === 'MENSALISTA'
+      if (!ehMensal) return
+      const dueDay = c.monthly_due_day || 10
+      const offset = c.monthly_due_offset == null ? 1 : Number(c.monthly_due_offset)
+      const aptDate = new Date(a.start_time)
+      const due = monthlyDueDate(aptDate.getFullYear(), aptDate.getMonth(), dueDay, offset)
+      if (due.getFullYear() !== viewY || due.getMonth() !== viewM) return
+      if (!porCliente[c.id]) {
+        porCliente[c.id] = {
+          ...c,
+          servicosFeitos: 0,
+          valorServicos: 0,
+          vencimento: due,
+        }
+      }
+      porCliente[c.id].servicosFeitos += 1
+      porCliente[c.id].valorServicos += Number(a.agreed_price) || 0
+    })
+
     const { data: clientesMensais } = await supabase.from('clients').select('*').eq('type', 'MENSALISTA')
+    ;(clientesMensais || []).forEach(c => {
+      if (porCliente[c.id]) return
+      const dueDay = c.monthly_due_day || 10
+      const offset = c.monthly_due_offset == null ? 1 : Number(c.monthly_due_offset)
+      const svc = new Date(viewY, viewM - offset, 1)
+      const due = monthlyDueDate(svc.getFullYear(), svc.getMonth(), dueDay, offset)
+      if (due.getFullYear() !== viewY || due.getMonth() !== viewM) return
+      porCliente[c.id] = { ...c, servicosFeitos: 0, valorServicos: 0, vencimento: due }
+    })
+
     setMensalistasPendentes(
-      clientesMensais?.filter(c => !idsPagosNoMes.includes(c.id)).map(c => ({
-        ...c,
-        servicosFeitos: contagemServicosMensalistas[c.id] || 0,
-      })) || []
+      Object.values(porCliente)
+        .filter(c => !idsPagosNoMes.includes(c.id))
+        .map(c => ({
+          ...c,
+          monthly_fee: c.monthly_fee || (c.valorServicos > 0 ? c.valorServicos : null),
+        }))
     )
 
     const { data: { user } } = await supabase.auth.getUser()
@@ -166,11 +206,15 @@ export default function Financeiro() {
 
   const movimentacoesFiltradas = todasMovimentacoes.filter(m => {
     const cat = categoriaDe(m)
-    if (filtroAtivo === 'TODOS') return true
-    if (filtroAtivo === 'SERVICO') return cat === 'servico'
-    if (filtroAtivo === 'PRODUTO') return cat === 'produto'
-    if (filtroAtivo === 'MENSAL') return cat === 'mensalidade'
-    if (filtroAtivo === 'DESPESA') return m.type === 'DESPESA' || cat === 'despesa'
+    if (filtroAtivo === 'SERVICO' && cat !== 'servico') return false
+    if (filtroAtivo === 'PRODUTO' && cat !== 'produto') return false
+    if (filtroAtivo === 'MENSAL' && cat !== 'mensalidade') return false
+    if (filtroAtivo === 'DESPESA' && !(m.type === 'DESPESA' || cat === 'despesa')) return false
+    if (filtroPagamento === 'MENSALIDADE') {
+      if (cat !== 'mensalidade' && m.payment_method !== 'MENSALIDADE') return false
+    } else if (filtroPagamento !== 'TODOS') {
+      if ((m.payment_method || '') !== filtroPagamento) return false
+    }
     return true
   })
 
@@ -208,7 +252,7 @@ export default function Financeiro() {
   function abrirCobrancaRapida(cliente) {
     setTipoLancamento('RECEITA_MENSAL')
     setDesc(`Mensalidade ${cliente.name}`)
-    setValor(cliente.monthly_fee ? String(cliente.monthly_fee) : '')
+    setValor(cliente.monthly_fee ? String(cliente.monthly_fee) : (cliente.valorServicos ? String(cliente.valorServicos) : ''))
     setClientIdVinculado(cliente.id)
     setItemVendaId('')
     setMetodoPagamento('PIX')
@@ -435,8 +479,13 @@ export default function Financeiro() {
                 <div key={cliente.id} style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #d8b4fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ display: 'block', color: '#4a044e' }}>{cliente.name}</strong>
-                    <small style={{ color: '#666', display: 'block' }}>Vence dia {cliente.monthly_due_day}</small>
-                    <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>Fez {cliente.servicosFeitos} serviços este mês</span>
+                    <small style={{ color: '#666', display: 'block' }}>
+                      Vence em {cliente.vencimento ? cliente.vencimento.toLocaleDateString('pt-BR') : `dia ${cliente.monthly_due_day || 10}`}
+                    </small>
+                    <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>
+                      {cliente.servicosFeitos} serviço(s) no ciclo
+                      {cliente.monthly_fee ? ` · R$ ${money(cliente.monthly_fee)}` : ''}
+                    </span>
                   </div>
                   <button onClick={() => abrirCobrancaRapida(cliente)} style={{ background: '#6610f2', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Receber</button>
                 </div>
@@ -515,12 +564,21 @@ export default function Financeiro() {
           </div>
         )}
 
-        <div id="fin-filtros" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '10px' }}>
+        <div id="fin-filtros" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '4px' }}>
           {['TODOS', 'SERVICO', 'PRODUTO', 'MENSAL', 'DESPESA'].map(f => (
             <button key={f} onClick={() => setFiltroAtivo(f)} style={filtroAtivo === f ? btnFiltroAtivo : btnFiltroInativo}>
               {f === 'TODOS' ? 'Todos' : f === 'SERVICO' ? 'Serviços' : f === 'PRODUTO' ? 'Produtos' : f === 'MENSAL' ? 'Mensalidades' : 'Despesas'}
             </button>
           ))}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px' }}>
+            {[['TODOS', 'Pagamento'], ['PIX', 'PIX'], ['DINHEIRO', 'Dinheiro'], ['CARTAO', 'Cartão'], ['MENSALIDADE', 'Mensalidade']].map(([id, label]) => (
+              <button key={id} onClick={() => setFiltroPagamento(id)} style={filtroPagamento === id ? btnFiltroAtivo : btnFiltroInativo}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

@@ -15,12 +15,17 @@ export default function Clientes() {
   const [clientes, setClientes] = useState([])
   const [busca, setBusca] = useState('')
   const [filtroPeriodo, setFiltroPeriodo] = useState('MES')
+  const [filtroPagamento, setFiltroPagamento] = useState('TODOS')
 
   // Estados para Modal de Novo/Editar
   const [modalAberto, setModalAberto] = useState(false)
   const [nomeCliente, setNomeCliente] = useState('')
   const [phoneCliente, setPhoneCliente] = useState('')
   const [idEdicao, setIdEdicao] = useState(null)
+  const [tipoCliente, setTipoCliente] = useState('AVULSO')
+  const [mensalidadeValor, setMensalidadeValor] = useState('')
+  const [diaVencimento, setDiaVencimento] = useState('10')
+  const [offsetVencimento, setOffsetVencimento] = useState('1')
 
   // Estados para Modal de Histórico
   const [clienteSelecionada, setClienteSelecionada] = useState(null)
@@ -51,7 +56,7 @@ export default function Clientes() {
         },
         { 
           element: '#cli-filtros', 
-          popover: { title: 'Ranking de Gastos', description: 'Escolha "Este Mês" para ver quem está gastando agora, ou "Tudo" para ver as clientes mais fiéis da história.' } 
+          popover: { title: 'Filtros', description: 'Veja o ranking do mês ou de sempre, e filtre pela forma de pagamento (PIX, cartão, mensalidade…).' } 
         },
         { 
           element: '#cli-lista', 
@@ -80,7 +85,7 @@ export default function Clientes() {
     const { data: clientsData, error: errClients } = await supabase.from('clients').select('*').order('name')
     if (errClients) { toast.error('Erro ao carregar clientes'); return; }
 
-    let query = supabase.from('appointments').select('client_id, agreed_price, start_time, services(name)').eq('status', 'CONCLUIDO')
+    let query = supabase.from('appointments').select('client_id, agreed_price, start_time, payment_method, services(name)').eq('status', 'CONCLUIDO')
 
     if (filtroPeriodo === 'MES') {
         const hoje = new Date()
@@ -107,7 +112,17 @@ export default function Clientes() {
     e.preventDefault()
     if (!nomeCliente || !phoneCliente) return toast.error('Preencha os campos')
     const user = (await supabase.auth.getUser()).data.user
-    const dados = { name: nomeCliente, phone: phoneCliente, user_id: user.id, type: 'AVULSO' }
+    const dados = {
+      name: nomeCliente,
+      phone: phoneCliente,
+      user_id: user.id,
+      type: tipoCliente,
+    }
+    if (tipoCliente === 'MENSALISTA') {
+      dados.monthly_fee = mensalidadeValor ? Number(String(mensalidadeValor).replace(',', '.')) : null
+      dados.monthly_due_day = Math.min(31, Math.max(1, parseInt(diaVencimento, 10) || 10))
+      dados.monthly_due_offset = offsetVencimento === '0' ? 0 : 1
+    }
 
     let error
     if (idEdicao) {
@@ -118,7 +133,7 @@ export default function Clientes() {
         error = res.error
     }
 
-    if (error) toast.error('Erro ao salvar')
+    if (error) toast.error(error.message?.includes('monthly_') ? 'Rode o SQL 007 no Supabase (vencimento da mensalidade).' : (error.message || 'Erro ao salvar'))
     else {
         toast.success('Cliente salva!')
         setModalAberto(false)
@@ -166,12 +181,31 @@ export default function Clientes() {
       setIdEdicao(c.id)
       setNomeCliente(c.name)
       setPhoneCliente(c.phone)
+      setTipoCliente(c.type === 'MENSALISTA' ? 'MENSALISTA' : 'AVULSO')
+      setMensalidadeValor(c.monthly_fee != null ? String(c.monthly_fee) : '')
+      setDiaVencimento(String(c.monthly_due_day || 10))
+      setOffsetVencimento(c.monthly_due_offset == null ? '1' : String(c.monthly_due_offset))
       setModalAberto(true)
   }
 
-  const limparForm = () => { setIdEdicao(null); setNomeCliente(''); setPhoneCliente('') }
+  const limparForm = () => {
+    setIdEdicao(null)
+    setNomeCliente('')
+    setPhoneCliente('')
+    setTipoCliente('AVULSO')
+    setMensalidadeValor('')
+    setDiaVencimento('10')
+    setOffsetVencimento('1')
+  }
 
-  const filtrarLista = clientes.filter(c => c.name.toLowerCase().includes(busca.toLowerCase()))
+  const filtrarLista = clientes.filter(c => {
+    if (!c.name.toLowerCase().includes(busca.toLowerCase())) return false
+    if (filtroPagamento === 'TODOS') return true
+    if (filtroPagamento === 'MENSALIDADE') {
+      return c.type === 'MENSALISTA' || (c.historico || []).some(h => h.payment_method === 'MENSALIDADE')
+    }
+    return (c.historico || []).some(h => h.payment_method === filtroPagamento)
+  })
 
   return (
     <div style={{ minHeight: '100%', background: '#f8fafc', paddingBottom: '80px', fontFamily: 'sans-serif' }}>
@@ -220,7 +254,8 @@ export default function Clientes() {
         </div>
 
         {/* FILTROS (COM ID) */}
-        <div id="cli-filtros" style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <div id="cli-filtros" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
             <button 
                 onClick={() => setFiltroPeriodo('MES')}
                 style={{ flex: 1, padding: '10px', borderRadius: '8px', border: filtroPeriodo === 'MES' ? '1px solid #2563eb' : '1px solid #e2e8f0', background: filtroPeriodo === 'MES' ? '#eff6ff' : 'white', color: filtroPeriodo === 'MES' ? '#2563eb' : '#64748b', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}
@@ -233,6 +268,28 @@ export default function Clientes() {
             >
                 ♾️ Tudo
             </button>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {[['TODOS', 'Pagamento'], ['PIX', 'PIX'], ['DINHEIRO', 'Dinheiro'], ['CARTAO', 'Cartão'], ['MENSALIDADE', 'Mensalidade']].map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setFiltroPagamento(id)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: filtroPagamento === id ? '1px solid #2563eb' : '1px solid #e2e8f0',
+                    background: filtroPagamento === id ? '#eff6ff' : 'white',
+                    color: filtroPagamento === id ? '#2563eb' : '#64748b',
+                    fontWeight: 'bold',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
         </div>
 
         {/* LISTA (COM ID) */}
@@ -252,6 +309,11 @@ export default function Clientes() {
                             <div style={{ minWidth: 0 }}>
                                 <h3 style={{margin:0, fontSize:'16px', color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{cliente.name}</h3>
                                 <span style={{fontSize:'12px', color:'#64748b'}}>{formatarTelefone(cliente.phone)}</span>
+                                {cliente.type === 'MENSALISTA' && (
+                                  <span style={{ display: 'block', fontSize: '11px', color: '#dc2626', fontWeight: 'bold' }}>
+                                    Mensalidade · vence dia {cliente.monthly_due_day || 10}{Number(cliente.monthly_due_offset) === 0 ? ' no mesmo mês' : ' no mês seguinte'}
+                                  </span>
+                                )}
                                 {(cliente.loyalty_visits > 0) && (
                                   <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>★ {cliente.loyalty_visits} visitas</span>
                                 )}
@@ -299,6 +361,7 @@ export default function Clientes() {
                                     <strong style={{display:'block', fontSize:'14px', color:'#333'}}>{item.services?.name}</strong>
                                     <span style={{fontSize:'12px', color:'#999'}}>
                                         {new Date(item.start_time).toLocaleDateString('pt-BR')}
+                                        {item.payment_method ? ` · ${labelPagamento(item.payment_method)}` : ''}
                                     </span>
                                 </div>
                                 <span style={{fontWeight:'bold', color:'#16a34a'}}>R$ {item.agreed_price}</span>
@@ -323,17 +386,53 @@ export default function Clientes() {
       {/* --- MODAL NOVO/EDITAR --- */}
       {modalAberto && (
         <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.5)', zIndex:60, display:'flex', alignItems:'center', justifyContent:'center'}} onClick={(e)=>{if(e.target===e.currentTarget) setModalAberto(false)}}>
-             <div style={{background:'white', padding:'25px', borderRadius:'16px', width:'90%', maxWidth:'400px'}}>
+             <div style={{background:'white', padding:'25px', borderRadius:'16px', width:'90%', maxWidth:'400px', maxHeight:'90vh', overflowY:'auto'}}>
                  <h3 style={{marginTop:0}}>{idEdicao ? 'Editar' : 'Nova'}</h3>
                  <form onSubmit={salvarCliente}>
                      <div style={{marginBottom:'15px'}}>
                          <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Nome</label>
                          <input required value={nomeCliente} onChange={e=>setNomeCliente(e.target.value)} style={inputStyle} placeholder="Ex: Maria Silva" />
                      </div>
-                     <div style={{marginBottom:'20px'}}>
+                     <div style={{marginBottom:'15px'}}>
                          <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>WhatsApp</label>
                          <input required value={phoneCliente} onChange={e => setPhoneCliente(formatarTelefone(e.target.value))} style={inputStyle} placeholder="(00) 00000-0000" maxLength={15}/>
                      </div>
+                     <div style={{marginBottom:'15px'}}>
+                         <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Tipo</label>
+                         <div style={{display:'flex', gap:'8px'}}>
+                           <button type="button" onClick={() => setTipoCliente('AVULSO')} style={tipoCliente === 'AVULSO' ? btnChipOn : btnChipOff}>Avulsa</button>
+                           <button type="button" onClick={() => setTipoCliente('MENSALISTA')} style={tipoCliente === 'MENSALISTA' ? btnChipOn : btnChipOff}>Mensalista</button>
+                         </div>
+                     </div>
+                     {tipoCliente === 'MENSALISTA' && (
+                       <>
+                         <div style={{marginBottom:'15px'}}>
+                           <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Valor da mensalidade (opcional)</label>
+                           <input value={mensalidadeValor} onChange={e => setMensalidadeValor(e.target.value)} style={inputStyle} placeholder="Ex: 150 — senão soma os serviços" inputMode="decimal" />
+                         </div>
+                         <div style={{marginBottom:'8px'}}>
+                           <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Quando cobra</label>
+                           <div style={{display:'flex', flexDirection:'column', gap:'8px'}}>
+                             <button type="button" onClick={() => { setDiaVencimento('10'); setOffsetVencimento('1') }} style={diaVencimento === '10' && offsetVencimento === '1' ? btnChipOn : btnChipOff}>Dia 10 do mês seguinte</button>
+                             <button type="button" onClick={() => { setDiaVencimento('31'); setOffsetVencimento('0') }} style={diaVencimento === '31' && offsetVencimento === '0' ? btnChipOn : btnChipOff}>Último dia do mês dos serviços</button>
+                           </div>
+                         </div>
+                         <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
+                           <div style={{flex:1}}>
+                             <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Dia</label>
+                             <input type="number" min="1" max="31" value={diaVencimento} onChange={e => setDiaVencimento(e.target.value)} style={inputStyle} />
+                           </div>
+                           <div style={{flex:1}}>
+                             <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Mês</label>
+                             <select value={offsetVencimento} onChange={e => setOffsetVencimento(e.target.value)} style={inputStyle}>
+                               <option value="0">Mesmo mês</option>
+                               <option value="1">Mês seguinte</option>
+                             </select>
+                           </div>
+                         </div>
+                       </>
+                     )}
+                     {tipoCliente !== 'MENSALISTA' && <div style={{marginBottom:'20px'}} />}
                      <button type="submit" style={btnStyle}>Salvar</button>
                  </form>
              </div>
@@ -347,3 +446,13 @@ export default function Clientes() {
 
 const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing:'border-box' }
 const btnStyle = { width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 'bold', cursor:'pointer' }
+const btnChipOn = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer' }
+const btnChipOff = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }
+
+function labelPagamento(metodo) {
+  if (metodo === 'PIX') return 'PIX'
+  if (metodo === 'DINHEIRO') return 'Dinheiro'
+  if (metodo === 'CARTAO') return 'Cartão'
+  if (metodo === 'MENSALIDADE') return 'Mensalidade'
+  return metodo
+}
