@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <circle cx="256" cy="256" r="256" fill="#fce7f3"/>
+  
+  <rect x="216" y="100" width="80" height="140" rx="10" fill="#1f2937"/>
+  
+  <path d="M156,240 h200 c20,0 40,20 40,50 v100 c0,40 -30,70 -70,70 h-140 c-40,0 -70,-30 -70,-70 v-100 c0,-30 20,-50 40,-50 z" fill="#db2777"/>
+  
+  <path d="M180,270 q0,80 10,140" stroke="white" stroke-width="15" stroke-linecap="round" opacity="0.4" fill="none"/>
+  
+  <text x="256" y="380" font-family="Arial, sans-serif" font-size="120" font-weight="bold" fill="white" text-anchor="middle">C</text>
+</svg>
