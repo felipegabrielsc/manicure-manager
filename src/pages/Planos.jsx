@@ -1,39 +1,64 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams, useLocation } from 'react-router-dom'
 import { ArrowLeft, CreditCard, Check, Crown, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSessionProfile } from '../context/SessionProfile'
+import { isSubscriptionUsable } from '../utils/entitlements'
 
 const DEFAULT_CHECKOUT = import.meta.env.VITE_MERCADOPAGO_CHECKOUT_URL
 
 export default function Planos() {
   const [plans, setPlans] = useState([])
-  const [perfil, setPerfil] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [payingId, setPayingId] = useState(null)
+  const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const { profile, refreshProfile } = useSessionProfile()
 
   useEffect(() => { init() }, [])
 
+  useEffect(() => {
+    const mp = searchParams.get('mp')
+    if (mp === 'success') {
+      toast.success('Pagamento enviado. O plano confirma em instantes — atualize se ainda não mudou.')
+      refreshProfile?.()
+    } else if (mp === 'failure') {
+      toast.error('Pagamento não concluído.')
+    } else if (mp === 'pending') {
+      toast('Pagamento pendente. Assim que o Mercado Pago confirmar, o plano ativa sozinho.')
+    }
+    if (location.state?.needFeature) {
+      toast.error(`Seu plano não inclui ${location.state.needFeature}.`)
+    } else if (location.state?.expired) {
+      toast.error('Seu período acabou. Escolha um plano para continuar.')
+    }
+  }, [])
+
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const [{ data: p }, { data: pl }] = await Promise.all([
-      supabase.from('profiles').select('*, subscription_plans(name, price)').eq('id', user.id).single(),
-      supabase.from('subscription_plans').select('*').eq('active', true).order('sort_order'),
-    ])
-
-    setPerfil(p)
+    const { data: pl } = await supabase.from('subscription_plans').select('*').eq('active', true).order('sort_order')
     setPlans(pl || [])
     setLoading(false)
   }
 
-  function assinar(plan) {
+  async function assinar(plan) {
+    setPayingId(plan.id)
+    const { data, error } = await supabase.functions.invoke('mp-create-preference', {
+      body: { plan_id: plan.id, origin: window.location.origin },
+    })
+    setPayingId(null)
+
+    if (!error && data?.ok && (data.init_point || data.sandbox_init_point)) {
+      window.location.assign(data.init_point || data.sandbox_init_point)
+      return
+    }
+
     const url = plan.checkout_url || DEFAULT_CHECKOUT
     if (!url) {
-      return toast.error('Link de pagamento não configurado. Defina checkout_url no plano ou VITE_MERCADOPAGO_CHECKOUT_URL no .env')
+      return toast.error(data?.reason || 'Pagamento não configurado. Deploy da função mp-create-preference ou um checkout_url no plano.')
     }
+    toast('Abrindo link fixo. O plano só ativa sozinho com a função de webhook.')
     window.open(url, '_blank')
-    toast.success('Redirecionando para pagamento...')
   }
 
   if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Carregando...</div>
@@ -45,6 +70,8 @@ export default function Planos() {
     cancelled: 'Cancelado',
   }
 
+  const usable = isSubscriptionUsable(profile)
+
   return (
     <div style={{ paddingBottom: '50px', minHeight: '100%', background: 'linear-gradient(180deg, #eff6ff, #f8fafc)' }}>
       <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -53,19 +80,30 @@ export default function Planos() {
       </div>
 
       <div className="page-inner" style={{ padding: '20px' }}>
+        {!usable && (
+          <div style={{ background: '#fef3c7', color: '#92400e', padding: '14px 16px', borderRadius: '12px', marginBottom: '16px', fontSize: '14px' }}>
+            O acesso às outras telas fica pausado até o pagamento confirmar. Estoque, fidelidade e equipe dependem do plano Pro.
+          </div>
+        )}
+
         <div style={{ background: 'white', padding: '20px', borderRadius: '16px', marginBottom: '24px', border: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
             <Crown size={28} color="#2563eb" />
             <div>
-              <strong style={{ fontSize: '18px' }}>{perfil?.subscription_plans?.name || 'Sem plano'}</strong>
+              <strong style={{ fontSize: '18px' }}>{profile?.subscription_plans?.name || 'Sem plano'}</strong>
               <span style={{ display: 'block', fontSize: '13px', color: '#64748b' }}>
-                Status: {statusLabel[perfil?.subscription_status] || perfil?.subscription_status || 'trial'}
+                Status: {statusLabel[profile?.subscription_status] || profile?.subscription_status || 'trial'}
               </span>
             </div>
           </div>
-          {perfil?.subscription_expires_at && (
+          {profile?.subscription_expires_at && (
             <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-              Válido até: {new Date(perfil.subscription_expires_at).toLocaleDateString('pt-BR')}
+              Assinatura até: {new Date(profile.subscription_expires_at).toLocaleDateString('pt-BR')}
+            </p>
+          )}
+          {profile?.trial_ends_at && (profile?.subscription_status || 'trial') === 'trial' && (
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '6px 0 0' }}>
+              Teste até: {new Date(profile.trial_ends_at).toLocaleDateString('pt-BR')}
             </p>
           )}
         </div>
@@ -73,7 +111,7 @@ export default function Planos() {
         <h3 style={{ color: '#1e293b', marginBottom: '16px' }}>Planos disponíveis</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {plans.map(plan => {
-            const isCurrent = perfil?.plan_id === plan.id
+            const isCurrent = profile?.plan_id === plan.id && usable
             const features = Array.isArray(plan.features) ? plan.features : []
             return (
               <div key={plan.id} style={{
@@ -99,11 +137,12 @@ export default function Planos() {
                 {isCurrent ? (
                   <div style={{ padding: '12px', background: '#eff6ff', borderRadius: '8px', textAlign: 'center', color: '#2563eb', fontWeight: 'bold' }}>Plano atual</div>
                 ) : (
-                  <button onClick={() => assinar(plan)} style={{
+                  <button onClick={() => assinar(plan)} disabled={payingId === plan.id} style={{
                     width: '100%', padding: '14px', background: '#2563eb', color: 'white', border: 'none',
                     borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    opacity: payingId === plan.id ? 0.7 : 1,
                   }}>
-                    <CreditCard size={18} /> Assinar via Mercado Pago <ExternalLink size={14} />
+                    <CreditCard size={18} /> {payingId === plan.id ? 'Abrindo Mercado Pago...' : 'Assinar via Mercado Pago'} <ExternalLink size={14} />
                   </button>
                 )}
               </div>

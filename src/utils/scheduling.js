@@ -65,6 +65,11 @@ function buildInterval(date, minutesFromMidnight, durationMinutes) {
   return { start, end: addMinutes(start, durationMinutes) }
 }
 
+export function staffSlotsConflict(existingStaffId, bookingStaffId) {
+  if (!bookingStaffId || !existingStaffId) return true
+  return existingStaffId === bookingStaffId
+}
+
 export function getBusyIntervals(appointments, blockedSlots, servicesMap = {}, excludeAppointmentId = null) {
   const intervals = []
 
@@ -75,7 +80,12 @@ export function getBusyIntervals(appointments, blockedSlots, servicesMap = {}, e
     const duration = apt.services?.duration_minutes
       ?? servicesMap[apt.service_id]?.duration_minutes
       ?? 60
-    intervals.push({ start, end: addMinutes(start, duration), type: 'appointment' })
+    intervals.push({
+      start,
+      end: addMinutes(start, duration),
+      type: 'appointment',
+      staffId: apt.staff_id || null,
+    })
   }
 
   for (const slot of blockedSlots || []) {
@@ -83,10 +93,16 @@ export function getBusyIntervals(appointments, blockedSlots, servicesMap = {}, e
       start: new Date(slot.start_time),
       end: new Date(slot.end_time),
       type: 'blocked',
+      staffId: null,
     })
   }
 
   return intervals
+}
+
+function intervalBlocksSlot(interval, bookingStaffId) {
+  if (interval.type === 'blocked') return true
+  return staffSlotsConflict(interval.staffId, bookingStaffId)
 }
 
 export function validateBookingSlot({
@@ -97,6 +113,7 @@ export function validateBookingSlot({
   blockedSlots = [],
   servicesMap = {},
   excludeAppointmentId = null,
+  staffId = null,
 }) {
   const start = new Date(startTime)
   if (Number.isNaN(start.getTime())) {
@@ -128,6 +145,7 @@ export function validateBookingSlot({
   const busy = getBusyIntervals(appointments, blockedSlots, servicesMap, excludeAppointmentId)
 
   for (const interval of busy) {
+    if (!intervalBlocksSlot(interval, staffId)) continue
     if (overlaps(start, end, interval.start, interval.end)) {
       return { valid: false, reason: 'Horário indisponível ou já ocupado.' }
     }
@@ -144,6 +162,7 @@ export function generateAvailableSlots({
   blockedSlots = [],
   servicesMap = {},
   slotStepMinutes = 30,
+  staffId = null,
 }) {
   const window = getBusinessWindowForDate(businessHours, date)
   if (!window) return []
@@ -156,7 +175,7 @@ export function generateAvailableSlots({
     const { start, end } = buildInterval(date, min, durationMinutes)
     if (start < now) continue
 
-    const conflict = busy.some(b => overlaps(start, end, b.start, b.end))
+    const conflict = busy.some(b => intervalBlocksSlot(b, staffId) && overlaps(start, end, b.start, b.end))
     if (!conflict) {
       slots.push({
         start,
@@ -247,7 +266,7 @@ export async function fetchWeekAppointments(supabase, weekStartDate) {
 
   const { data } = await supabase
     .from('appointments')
-    .select('id, start_time, status, clients(name), services(name)')
+    .select('id, start_time, status, staff_id, clients(name), services(name), staff_members(name)')
     .gte('start_time', start.toISOString())
     .lt('start_time', end.toISOString())
     .order('start_time')

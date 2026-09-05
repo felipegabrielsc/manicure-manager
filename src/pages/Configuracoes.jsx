@@ -168,7 +168,7 @@ export default function Configuracoes() {
     const result = await subscribeToPush(userId)
     if (result.ok) {
       setPushAtivo(true)
-      toast.success('Permissão salva neste aparelho. Alertas só aparecem com o app aberto até o envio pelo servidor.')
+      toast.success('Permissão salva. Com o envio no servidor ligado, o aviso chega com o app fechado.')
     } else if (result.reason === 'denied') {
       toast.error('Permissão bloqueada. Libere notificações nas configurações do celular/navegador.')
     } else if (result.reason === 'no_vapid') {
@@ -303,7 +303,7 @@ export default function Configuracoes() {
         <div id="card-push" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
             <h3 style={{ marginTop: 0, color: '#2563eb', display:'flex', alignItems:'center', gap:'10px' }}><Smartphone size={20}/> Notificações Push</h3>
             <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 12px' }}>
-              Hoje o aviso só aparece neste aparelho, com o app aberto (ou instalado na tela inicial). Envio com o celular fechado ainda não está ligado.
+              Ative neste aparelho (de preferência pelo ícone na tela inicial). Com a função de envio no Supabase, o aviso chega mesmo com o app fechado: nova solicitação e lembrete de horário.
             </p>
             {!pushCaps.vapid && (
               <p style={{ fontSize: '13px', color: '#b45309', background: '#fffbeb', padding: '10px', borderRadius: '8px', margin: '0 0 12px' }}>

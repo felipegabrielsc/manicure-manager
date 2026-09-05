@@ -37,6 +37,8 @@ supabase/migrations/001_phase1_phase2.sql
 supabase/migrations/002_phase3_phase4.sql
 supabase/migrations/003_phase_b_financeiro.sql
 supabase/migrations/004_phase_d_rls_booking.sql
+supabase/migrations/005_phase_e_invite_billing.sql
+supabase/migrations/006_phase_f_push_staff.sql
 ```
 
 **Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
@@ -55,6 +57,7 @@ npm run dev
 | `npm run build` | Build de produção |
 | `npm run preview` | Preview do build |
 | `npm run lint` | ESLint |
+| `npm test` | Testes (horários, plano, datas) |
 
 ## Rotas principais
 
@@ -80,11 +83,27 @@ npm run dev
 - **Planos:** assinatura via Mercado Pago (admin atribui planos)
 - **Push:** notificações PWA (Configurações)
 
-## Mercado Pago
+## Mercado Pago e convites (fase E)
 
-1. Crie links de assinatura no Mercado Pago
-2. Atualize `checkout_url` na tabela `subscription_plans` no Supabase
-3. Ou defina `VITE_MERCADOPAGO_CHECKOUT_URL` no `.env` como fallback
+Cadastro aberto (`/cadastro-vip` sem token) não funciona mais. No **Admin**, gere um convite de uso único e envie o link.
+
+1. Rode `005_phase_e_invite_billing.sql` no SQL Editor.
+2. Instale o [Supabase CLI](https://supabase.com/docs/guides/cli) e faça login no projeto.
+3. Deploy das funções:
+
+```bash
+supabase functions deploy mp-create-preference
+supabase functions deploy mp-webhook
+supabase secrets set MP_ACCESS_TOKEN=APP_USR-seu-token
+```
+
+4. No Mercado Pago → Webhooks, cadastre:
+
+`https://SEU_PROJETO.supabase.co/functions/v1/mp-webhook`
+
+Eventos de **pagamento**. Sem a função + token, o botão Assinar cai no link fixo (`checkout_url`) e o plano **não** ativa sozinho.
+
+**Trava de plano:** teste 14 dias (Agenda, Clientes, Serviços, Financeiro). Estoque, Fidelidade e Equipe exigem o plano **Pro**. Teste/assinatura vencidos mandam para `/planos`.
 
 ## Segurança da agenda pública (fase D)
 
@@ -95,12 +114,28 @@ O visitante anônimo **não** lê nem grava `appointments` / `clients` direto. O
 - `get_resumo_agendamento` — convite `/resumo/:id` (sem telefone)
 - `criar_agendamento_publico` — cria o pedido com trava no banco (evita dois horários iguais ao mesmo tempo)
 
-## Push notifications
+## Push (fase F)
 
-1. Gere par de chaves VAPID (ex: `web-push generate-vapid-keys`)
-2. Configure `VITE_VAPID_PUBLIC_KEY` no `.env`
-3. Ative em **Configurações → Notificações Push**
-4. Instale o app como PWA no celular
+1. Gere o par VAPID: `npx web-push generate-vapid-keys`
+2. Pública no `.env` / Vercel: `VITE_VAPID_PUBLIC_KEY`
+3. Privada **só** no Supabase (secrets):
+
+```bash
+supabase functions deploy push-dispatch
+supabase secrets set VAPID_PUBLIC_KEY=...
+supabase secrets set VAPID_PRIVATE_KEY=...
+supabase secrets set VAPID_SUBJECT=mailto:seu-email@dominio.com
+supabase secrets set CRON_SECRET=uma-senha-longa
+```
+
+4. Rode `006_phase_f_push_staff.sql`
+5. No Supabase → Edge Functions → `push-dispatch` → **Schedules**, a cada 5 minutos, com header `x-cron-secret: sua-senha`. Ou:
+
+`https://SEU_PROJETO.supabase.co/functions/v1/push-dispatch`
+
+6. No celular: instale o PWA e ative em **Configurações → Notificações Push**
+
+A agenda mostra o nome da profissional e deixa filtrar. Duas profissionais podem ocupar o mesmo horário; conflito só na mesma pessoa (ou se o horário não tiver profissional).
 
 ## Recuperação de senha
 

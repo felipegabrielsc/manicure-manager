@@ -17,6 +17,9 @@ import {
   Plus,
 } from 'lucide-react'
 import { supabase } from '../supabaseClient'
+import { useSessionProfile } from '../context/SessionProfile'
+import { hasFeature, FEATURE_BY_PATH } from '../utils/entitlements'
+import PlanGate from './PlanGate'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Agenda', icon: Calendar, id: 'nav-agenda', end: true },
@@ -46,16 +49,9 @@ const TITLES = {
 
 export default function AppLayout() {
   const location = useLocation()
-  const [isAdmin, setIsAdmin] = useState(false)
+  const { profile } = useSessionProfile()
+  const isAdmin = !!profile?.is_admin
   const [menuAberto, setMenuAberto] = useState(false)
-
-  useEffect(() => {
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return
-      const { data } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
-      setIsAdmin(!!data?.is_admin)
-    })
-  }, [])
 
   useEffect(() => {
     setMenuAberto(false)
@@ -73,7 +69,11 @@ export default function AppLayout() {
   function renderNav(closeOnClick) {
     return (
       <>
-        {NAV_ITEMS.map(item => {
+        {NAV_ITEMS.filter(item => {
+          const feature = FEATURE_BY_PATH[item.to]
+          if (!feature) return true
+          return hasFeature(profile, feature)
+        }).map(item => {
           const Icon = item.icon
           return (
             <NavLink
@@ -139,6 +139,7 @@ export default function AppLayout() {
         </header>
 
         <div className="app-content">
+          <PlanGate />
           <Outlet />
         </div>
       </div>

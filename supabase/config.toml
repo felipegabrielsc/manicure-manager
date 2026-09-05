@@ -1,0 +1,10 @@
+project_id = "manicure-manager"
+
+[functions.mp-webhook]
+verify_jwt = false
+
+[functions.mp-create-preference]
+verify_jwt = true
+
+[functions.push-dispatch]
+verify_jwt = false
