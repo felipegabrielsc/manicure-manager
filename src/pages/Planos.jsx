@@ -5,6 +5,7 @@ import { ArrowLeft, CreditCard, Check, Crown, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSessionProfile } from '../context/SessionProfile'
 import { isSubscriptionUsable } from '../utils/entitlements'
+import UnlockAdminForm from '../components/UnlockAdminForm'
 
 const DEFAULT_CHECKOUT = import.meta.env.VITE_MERCADOPAGO_CHECKOUT_URL
 
@@ -152,6 +153,13 @@ export default function Planos() {
 
         {plans.length === 0 && (
           <p style={{ textAlign: 'center', color: '#94a3b8' }}>Execute a migration 002 para carregar os planos.</p>
+        )}
+
+        {!profile?.is_admin && (
+          <div style={{ marginTop: '28px', padding: '16px', background: 'white', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Dona do sistema? Código de liberação de admin:</p>
+            <UnlockAdminForm onUnlocked={async () => { await refreshProfile?.(); window.location.assign('/admin') }} />
+          </div>
         )}
       </div>
     </div>

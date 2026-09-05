@@ -1,8 +1,11 @@
 // src/pages/Bloqueado.jsx
 import { ShieldAlert, Clock, MessageCircle } from 'lucide-react'
 import { openSupportWhatsApp } from '../config/app'
+import UnlockAdminForm from '../components/UnlockAdminForm'
+import { useSessionProfile } from '../context/SessionProfile'
 
 export default function Bloqueado() {
+  const { refreshProfile } = useSessionProfile()
   const abrirSuporte = () => openSupportWhatsApp('Olá, acabei de me cadastrar no sistema. Poderia liberar meu acesso?')
 
   return (
@@ -38,6 +41,11 @@ export default function Bloqueado() {
         >
           Já fui aprovada? Atualizar
         </button>
+
+        <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0', textAlign: 'left' }}>
+          <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Dona do sistema? Use o código de liberação:</p>
+          <UnlockAdminForm onUnlocked={async () => { await refreshProfile?.(); window.location.reload() }} />
+        </div>
       </div>
 
     </div>
