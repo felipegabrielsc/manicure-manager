@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import { getWeekDays, fetchWeekAppointments, fetchSchedulingContext, validateBookingSlot, getServiceDuration } from '../utils/scheduling'
+import { incrementLoyaltyVisit } from '../utils/loyalty'
 import { openSupportWhatsApp } from '../config/app'
 
 export default function Agenda() {
@@ -164,9 +165,7 @@ export default function Agenda() {
     if (!error) {
       if (novoStatus === 'CONCLUIDO') {
         const apt = agendamentos.find(a => a.id === id)
-        if (apt?.client_id && userId) {
-          await supabase.rpc('incrementar_fidelidade', { p_client_id: apt.client_id, p_user_id: userId })
-        }
+        await incrementLoyaltyVisit(supabase, apt?.client_id)
       }
       setAgendamentos(prev => prev.map(item => item.id === id ? { ...item, status: novoStatus, payment_method: updateData.payment_method } : item))
       if (novoStatus === 'CONCLUIDO') toast.success(`Recebido!`, { icon: '💰' })

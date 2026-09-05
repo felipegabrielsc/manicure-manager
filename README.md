@@ -40,6 +40,7 @@ supabase/migrations/004_phase_d_rls_booking.sql
 supabase/migrations/005_phase_e_invite_billing.sql
 supabase/migrations/006_phase_f_push_staff.sql
 supabase/migrations/007_mensalidade_vencimento.sql
+supabase/migrations/008_fix_incrementar_fidelidade.sql
 ```
 
 **Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
