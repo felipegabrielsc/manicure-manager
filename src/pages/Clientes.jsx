@@ -4,9 +4,8 @@ import { supabase } from '../supabaseClient'
 import { ArrowLeft, Search, User, Plus, Trash2, Edit2, X, HelpCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import Modal from '../components/Modal' 
-
-// 1. IMPORTAÇÃO DO TUTORIAL (Igual ao Financeiro)
+import Modal from '../components/Modal'
+import { monthRangeLocal, formatCivilDate, money } from '../utils/dates'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 
@@ -16,6 +15,8 @@ export default function Clientes() {
   const [busca, setBusca] = useState('')
   const [filtroPeriodo, setFiltroPeriodo] = useState('MES')
   const [filtroPagamento, setFiltroPagamento] = useState('TODOS')
+  const [filtroTipo, setFiltroTipo] = useState('TODOS')
+  const [clienteFocoId, setClienteFocoId] = useState('')
 
   // Estados para Modal de Novo/Editar
   const [modalAberto, setModalAberto] = useState(false)
@@ -28,7 +29,7 @@ export default function Clientes() {
   const [offsetVencimento, setOffsetVencimento] = useState('1')
 
   // Estados para Modal de Histórico
-  const [clienteSelecionada, setClienteSelecionada] = useState(null)
+  const [clienteDetalheId, setClienteDetalheId] = useState(null)
 
   // Estados para o Modal de Confirmação (Delete)
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
@@ -56,7 +57,7 @@ export default function Clientes() {
         },
         { 
           element: '#cli-filtros', 
-          popover: { title: 'Filtros', description: 'Veja o ranking do mês ou de sempre, e filtre pela forma de pagamento (PIX, cartão, mensalidade…).' } 
+          popover: { title: 'Filtros', description: 'Escolha uma cliente, veja só os serviços ou só as compras, e filtre por PIX, cartão, dinheiro ou mensalidade.' } 
         },
         { 
           element: '#cli-lista', 
@@ -64,7 +65,7 @@ export default function Clientes() {
         },
         { 
           element: '#cli-detalhes', 
-          popover: { title: 'Histórico', description: 'Clique em qualquer cliente para ver o histórico detalhado de serviços e datas.' } 
+          popover: { title: 'Histórico', description: 'Abra a cliente para o extrato. Lá dá para ver todos os serviços ou só o que ela pagou no PIX.' } 
         }
       ]
     });
@@ -83,24 +84,51 @@ export default function Clientes() {
   async function carregarDados() {
     setLoading(true)
     const { data: clientsData, error: errClients } = await supabase.from('clients').select('*').order('name')
-    if (errClients) { toast.error('Erro ao carregar clientes'); return; }
+    if (errClients) { toast.error('Erro ao carregar clientes'); setLoading(false); return; }
 
-    let query = supabase.from('appointments').select('client_id, agreed_price, start_time, payment_method, services(name)').eq('status', 'CONCLUIDO')
+    let query = supabase.from('appointments').select('id, client_id, agreed_price, start_time, payment_method, services(name)').eq('status', 'CONCLUIDO')
+
+    let txQuery = supabase
+      .from('transactions')
+      .select('id, client_id, description, amount, date, payment_method, category, type')
+      .eq('type', 'RECEITA')
+      .not('client_id', 'is', null)
 
     if (filtroPeriodo === 'MES') {
-        const hoje = new Date()
-        const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString()
-        const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59).toISOString()
-        query = query.gte('start_time', inicioMes).lte('start_time', fimMes)
+        const { start, end, startDay, endDay } = monthRangeLocal(new Date())
+        query = query.gte('start_time', start.toISOString()).lte('start_time', end.toISOString())
+        txQuery = txQuery.gte('date', startDay).lte('date', `${endDay}T23:59:59`)
     }
 
-    const { data: appointmentsData } = await query
+    const [{ data: appointmentsData }, { data: transacoesData }] = await Promise.all([query, txQuery])
 
     const clientesComGasto = clientsData.map(cliente => {
-        const servicosFeitos = appointmentsData?.filter(app => app.client_id === cliente.id) || []
-        const totalGasto = servicosFeitos.reduce((acc, curr) => acc + (Number(curr.agreed_price) || 0), 0)
+        const servicos = (appointmentsData || [])
+          .filter(app => app.client_id === cliente.id)
+          .map(app => ({
+            id: `apt-${app.id}`,
+            tipo: 'servico',
+            titulo: app.services?.name || 'Serviço',
+            date: app.start_time,
+            amount: Number(app.agreed_price) || 0,
+            payment_method: app.payment_method,
+            category: 'servico',
+          }))
+        const compras = (transacoesData || [])
+          .filter(t => t.client_id === cliente.id)
+          .map(t => ({
+            id: `tx-${t.id}`,
+            tipo: 'compra',
+            titulo: t.description || (t.category === 'mensalidade' ? 'Mensalidade' : 'Compra'),
+            date: t.date,
+            amount: Number(t.amount) || 0,
+            payment_method: t.payment_method,
+            category: t.category,
+          }))
+        const historico = [...servicos, ...compras].sort((a, b) => String(b.date).localeCompare(String(a.date)))
+        const totalGasto = historico.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
 
-        return { ...cliente, totalGasto, historico: servicosFeitos }
+        return { ...cliente, totalGasto, historico }
     })
 
     clientesComGasto.sort((a, b) => b.totalGasto - a.totalGasto)
@@ -165,7 +193,7 @@ export default function Clientes() {
           if (deleteError) toast.error('Erro ao excluir.')
           else {
               toast.success('Cliente excluída')
-              setClienteSelecionada(null) 
+              setClienteDetalheId(null) 
               carregarDados()
           }
           setAlertModal({ ...alertModal, isOpen: false })
@@ -198,14 +226,26 @@ export default function Clientes() {
     setOffsetVencimento('1')
   }
 
+  const itensFiltradosDe = (historico) => (historico || []).filter(item => passaFiltroItem(item, filtroTipo, filtroPagamento))
+
   const filtrarLista = clientes.filter(c => {
+    if (clienteFocoId && c.id !== clienteFocoId) return false
     if (!c.name.toLowerCase().includes(busca.toLowerCase())) return false
-    if (filtroPagamento === 'TODOS') return true
-    if (filtroPagamento === 'MENSALIDADE') {
-      return c.type === 'MENSALISTA' || (c.historico || []).some(h => h.payment_method === 'MENSALIDADE')
-    }
-    return (c.historico || []).some(h => h.payment_method === filtroPagamento)
+    const itens = itensFiltradosDe(c.historico)
+    const filtroEstreito = filtroTipo !== 'TODOS' || filtroPagamento !== 'TODOS'
+    if (!clienteFocoId && filtroEstreito && itens.length === 0) return false
+    return true
   })
+
+  const clientesPorNome = [...clientes].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
+  const clienteDetalhe = clientes.find(c => c.id === clienteDetalheId)
+  const historicoDetalhe = clienteDetalhe ? itensFiltradosDe(clienteDetalhe.historico) : []
+  const totalDetalhe = historicoDetalhe.reduce((acc, item) => acc + (Number(item.amount) || 0), 0)
+
+  const escolherClienteFoco = (id) => {
+    setClienteFocoId(id)
+    setClienteDetalheId(id || null)
+  }
 
   return (
     <div style={{ minHeight: '100%', background: '#f8fafc', paddingBottom: '80px', fontFamily: 'sans-serif' }}>
@@ -255,6 +295,16 @@ export default function Clientes() {
 
         {/* FILTROS (COM ID) */}
         <div id="cli-filtros" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+            <select
+              value={clienteFocoId}
+              onChange={e => escolherClienteFoco(e.target.value)}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '16px', background: 'white', boxSizing: 'border-box' }}
+            >
+              <option value="">Todas as clientes</option>
+              {clientesPorNome.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
             <div style={{ display: 'flex', gap: '10px' }}>
             <button 
                 onClick={() => setFiltroPeriodo('MES')}
@@ -270,22 +320,15 @@ export default function Clientes() {
             </button>
             </div>
             <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {[['TODOS', 'Tudo'], ['SERVICOS', 'Serviços'], ['COMPRAS', 'Compras']].map(([id, label]) => (
+                <button key={id} onClick={() => setFiltroTipo(id)} style={chipFiltro(filtroTipo === id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
               {[['TODOS', 'Pagamento'], ['PIX', 'PIX'], ['DINHEIRO', 'Dinheiro'], ['CARTAO', 'Cartão'], ['MENSALIDADE', 'Mensalidade']].map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setFiltroPagamento(id)}
-                  style={{
-                    flexShrink: 0,
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    border: filtroPagamento === id ? '1px solid #2563eb' : '1px solid #e2e8f0',
-                    background: filtroPagamento === id ? '#eff6ff' : 'white',
-                    color: filtroPagamento === id ? '#2563eb' : '#64748b',
-                    fontWeight: 'bold',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
+                <button key={id} onClick={() => setFiltroPagamento(id)} style={chipFiltro(filtroPagamento === id)}>
                   {label}
                 </button>
               ))}
@@ -295,11 +338,17 @@ export default function Clientes() {
         {/* LISTA (COM ID) */}
         {loading ? <div style={{textAlign:'center', color:'#666'}}>Carregando...</div> : (
             <div id="cli-lista" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {filtrarLista.map((cliente, index) => (
+                {filtrarLista.length === 0 && (
+                  <p style={{ textAlign: 'center', color: '#94a3b8' }}>Nada neste filtro. Troque o período, o tipo ou o pagamento.</p>
+                )}
+                {filtrarLista.map((cliente, index) => {
+                    const itens = itensFiltradosDe(cliente.historico)
+                    const totalFiltro = itens.reduce((acc, item) => acc + (Number(item.amount) || 0), 0)
+                    return (
                     <div 
                         key={cliente.id} 
-                        id={index === 0 ? 'cli-detalhes' : ''} // Coloca ID só no primeiro para o tutorial apontar
-                        onClick={() => setClienteSelecionada(cliente)}
+                        id={index === 0 ? 'cli-detalhes' : ''}
+                        onClick={() => setClienteDetalheId(cliente.id)}
                         style={{ background: 'white', borderRadius: '12px', padding: '15px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: '12px', minWidth: 0 }}
                     >
                         <div style={{display:'flex', alignItems:'center', gap:'12px', minWidth: 0, flex: 1}}>
@@ -321,60 +370,78 @@ export default function Clientes() {
                         </div>
 
                         <div style={{textAlign:'right', flexShrink: 0}}>
-                            <span style={{display:'block', fontSize:'10px', color:'#64748b', fontWeight:'bold'}}>GASTOU</span>
-                            <span style={{color: cliente.totalGasto > 0 ? '#16a34a' : '#94a3b8', fontWeight: 'bold', fontSize: '16px'}}>
-                                R$ {cliente.totalGasto}
+                            <span style={{display:'block', fontSize:'10px', color:'#64748b', fontWeight:'bold'}}>
+                              {rotuloTotal(filtroTipo, filtroPagamento)}
                             </span>
+                            <span style={{color: totalFiltro > 0 ? '#16a34a' : '#94a3b8', fontWeight: 'bold', fontSize: '16px'}}>
+                                R$ {money(totalFiltro)}
+                            </span>
+                            <span style={{display:'block', fontSize:'11px', color:'#94a3b8'}}>{itens.length} item(ns)</span>
                         </div>
                     </div>
-                ))}
+                    )
+                })}
             </div>
         )}
       </div>
 
       {/* --- MODAL HISTÓRICO --- */}
-      {clienteSelecionada && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={(e) => { if(e.target === e.currentTarget) setClienteSelecionada(null) }}>
+      {clienteDetalhe && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={(e) => { if(e.target === e.currentTarget) setClienteDetalheId(null) }}>
             <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderRadius: '20px 20px 0 0', padding: '25px', maxHeight: '80vh', overflowY: 'auto', animation: 'slideUp 0.3s ease-out' }}>
                 
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'20px'}}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px'}}>
                     <div>
-                        <h2 style={{margin:0}}>{clienteSelecionada.name}</h2>
-                        <p style={{margin:0, color:'#666', fontSize:'14px'}}>Extrato ({filtroPeriodo === 'MES' ? 'Mês Atual' : 'Total'})</p>
+                        <h2 style={{margin:0}}>{clienteDetalhe.name}</h2>
+                        <p style={{margin:0, color:'#666', fontSize:'14px'}}>Extrato ({filtroPeriodo === 'MES' ? 'mês atual' : 'todo o período'})</p>
                     </div>
-                    <button onClick={() => setClienteSelecionada(null)} style={{background:'none', border:'none'}}><X/></button>
+                    <button onClick={() => setClienteDetalheId(null)} style={{background:'none', border:'none'}}><X/></button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '8px' }}>
+                  {[['TODOS', 'Tudo'], ['SERVICOS', 'Serviços'], ['COMPRAS', 'Compras']].map(([id, label]) => (
+                    <button key={id} onClick={() => setFiltroTipo(id)} style={chipFiltro(filtroTipo === id)}>{label}</button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '16px' }}>
+                  {[['TODOS', 'Pagamento'], ['PIX', 'PIX'], ['DINHEIRO', 'Dinheiro'], ['CARTAO', 'Cartão'], ['MENSALIDADE', 'Mensalidade']].map(([id, label]) => (
+                    <button key={id} onClick={() => setFiltroPagamento(id)} style={chipFiltro(filtroPagamento === id)}>{label}</button>
+                  ))}
                 </div>
 
                 <div style={{background:'#f0fdf4', padding:'15px', borderRadius:'12px', textAlign:'center', marginBottom:'20px', border:'1px solid #bbf7d0'}}>
-                    <span style={{color:'#166534', fontSize:'12px', fontWeight:'bold'}}>TOTAL GASTO</span>
-                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#15803d'}}>R$ {clienteSelecionada.totalGasto}</div>
+                    <span style={{color:'#166534', fontSize:'12px', fontWeight:'bold'}}>{rotuloTotal(filtroTipo, filtroPagamento)}</span>
+                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#15803d'}}>R$ {money(totalDetalhe)}</div>
+                    <span style={{color:'#166534', fontSize:'12px'}}>{historicoDetalhe.length} lançamento(s)</span>
                 </div>
 
                 <h4 style={{marginBottom:'10px', color:'#64748b'}}>Histórico:</h4>
-                {clienteSelecionada.historico.length === 0 ? (
-                    <p style={{textAlign:'center', color:'#999'}}>Nenhum serviço neste período.</p>
+                {historicoDetalhe.length === 0 ? (
+                    <p style={{textAlign:'center', color:'#999'}}>Nada neste filtro para esta cliente.</p>
                 ) : (
                     <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-                        {clienteSelecionada.historico.map((item, idx) => (
-                            <div key={idx} style={{display:'flex', justifyContent:'space-between', padding:'10px', borderBottom:'1px solid #f1f5f9'}}>
+                        {historicoDetalhe.map((item) => (
+                            <div key={item.id} style={{display:'flex', justifyContent:'space-between', padding:'10px', borderBottom:'1px solid #f1f5f9'}}>
                                 <div>
-                                    <strong style={{display:'block', fontSize:'14px', color:'#333'}}>{item.services?.name}</strong>
+                                    <strong style={{display:'block', fontSize:'14px', color:'#333'}}>{item.titulo}</strong>
                                     <span style={{fontSize:'12px', color:'#999'}}>
-                                        {new Date(item.start_time).toLocaleDateString('pt-BR')}
+                                        {item.tipo === 'servico' ? 'Serviço' : 'Compra'}
+                                        {' · '}
+                                        {formatCivilDate(item.date) || new Date(item.date).toLocaleDateString('pt-BR')}
                                         {item.payment_method ? ` · ${labelPagamento(item.payment_method)}` : ''}
                                     </span>
                                 </div>
-                                <span style={{fontWeight:'bold', color:'#16a34a'}}>R$ {item.agreed_price}</span>
+                                <span style={{fontWeight:'bold', color:'#16a34a'}}>R$ {money(item.amount)}</span>
                             </div>
                         ))}
                     </div>
                 )}
 
                 <div style={{display:'flex', gap:'10px', marginTop:'25px', borderTop:'1px solid #eee', paddingTop:'20px'}}>
-                    <button onClick={() => { setClienteSelecionada(null); abrirEdicao(clienteSelecionada, { stopPropagation: ()=>{} }) }} style={{flex:1, padding:'12px', background:'white', border:'1px solid #2563eb', color:'#2563eb', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
+                    <button onClick={() => { const c = clienteDetalhe; setClienteDetalheId(null); abrirEdicao(c, { stopPropagation: ()=>{} }) }} style={{flex:1, padding:'12px', background:'white', border:'1px solid #2563eb', color:'#2563eb', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
                         <Edit2 size={16}/> Editar
                     </button>
-                    <button onClick={() => { confirmarExclusao(clienteSelecionada.id) }} style={{flex:1, padding:'12px', background:'#fee2e2', border:'none', color:'#dc2626', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
+                    <button onClick={() => { confirmarExclusao(clienteDetalhe.id) }} style={{flex:1, padding:'12px', background:'#fee2e2', border:'none', color:'#dc2626', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
                         <Trash2 size={16}/> Excluir
                     </button>
                 </div>
@@ -448,6 +515,36 @@ const inputStyle = { width: '100%', padding: '10px', borderRadius: '8px', border
 const btnStyle = { width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: 'bold', cursor:'pointer' }
 const btnChipOn = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer' }
 const btnChipOff = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }
+
+function chipFiltro(ativo) {
+  return {
+    flexShrink: 0,
+    padding: '8px 12px',
+    borderRadius: '8px',
+    border: ativo ? '1px solid #2563eb' : '1px solid #e2e8f0',
+    background: ativo ? '#eff6ff' : 'white',
+    color: ativo ? '#2563eb' : '#64748b',
+    fontWeight: 'bold',
+    fontSize: '13px',
+    cursor: 'pointer',
+  }
+}
+
+function passaFiltroItem(item, filtroTipo, filtroPagamento) {
+  if (filtroTipo === 'SERVICOS' && item.tipo !== 'servico') return false
+  if (filtroTipo === 'COMPRAS' && item.tipo !== 'compra') return false
+  if (filtroPagamento === 'TODOS') return true
+  if (filtroPagamento === 'MENSALIDADE') {
+    return item.payment_method === 'MENSALIDADE' || item.category === 'mensalidade'
+  }
+  return item.payment_method === filtroPagamento
+}
+
+function rotuloTotal(filtroTipo, filtroPagamento) {
+  const tipo = filtroTipo === 'SERVICOS' ? 'SERVIÇOS' : filtroTipo === 'COMPRAS' ? 'COMPRAS' : 'TOTAL'
+  if (filtroPagamento === 'TODOS') return tipo
+  return `${tipo} · ${labelPagamento(filtroPagamento)}`
+}
 
 function labelPagamento(metodo) {
   if (metodo === 'PIX') return 'PIX'
