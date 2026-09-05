@@ -36,7 +36,10 @@ cp .env.example .env
 supabase/migrations/001_phase1_phase2.sql
 supabase/migrations/002_phase3_phase4.sql
 supabase/migrations/003_phase_b_financeiro.sql
+supabase/migrations/004_phase_d_rls_booking.sql
 ```
+
+**Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
 
 5. Inicie o projeto:
 
@@ -82,6 +85,15 @@ npm run dev
 1. Crie links de assinatura no Mercado Pago
 2. Atualize `checkout_url` na tabela `subscription_plans` no Supabase
 3. Ou defina `VITE_MERCADOPAGO_CHECKOUT_URL` no `.env` como fallback
+
+## Segurança da agenda pública (fase D)
+
+O visitante anônimo **não** lê nem grava `appointments` / `clients` direto. O site chama:
+
+- `get_agenda_publica` — horários ocupados sem dados da cliente
+- `get_perfil_publico` — página `/perfil/:id`
+- `get_resumo_agendamento` — convite `/resumo/:id` (sem telefone)
+- `criar_agendamento_publico` — cria o pedido com trava no banco (evita dois horários iguais ao mesmo tempo)
 
 ## Push notifications
 

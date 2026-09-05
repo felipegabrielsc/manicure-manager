@@ -16,7 +16,6 @@ export default defineConfig({
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',
-        permissions: ['notifications'],
         icons: [
           {
             src: 'carla-icon.svg', // Usando o SVG como ícone

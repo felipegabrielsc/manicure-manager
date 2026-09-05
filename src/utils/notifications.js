@@ -33,12 +33,29 @@ export function showLocalNotification(title, body, url = '/') {
   }
 }
 
+export function getPushCapabilities() {
+  const vapid = Boolean(VAPID_PUBLIC && String(VAPID_PUBLIC).trim())
+  const notificationApi = typeof window !== 'undefined' && 'Notification' in window
+  const serviceWorker = typeof navigator !== 'undefined' && 'serviceWorker' in navigator
+  const pushManager = typeof window !== 'undefined' && 'PushManager' in window
+  const standalone = typeof window !== 'undefined' && (
+    window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true
+  )
+  const permission = notificationApi ? Notification.permission : 'unsupported'
+  const canSubscribe = vapid && notificationApi && serviceWorker && pushManager
+  return { vapid, notificationApi, serviceWorker, pushManager, standalone, permission, canSubscribe }
+}
+
 export async function subscribeToPush(userId) {
-  if (!('serviceWorker' in navigator) || !VAPID_PUBLIC) return false
+  const caps = getPushCapabilities()
+  if (!caps.notificationApi) return { ok: false, reason: 'unsupported' }
+  if (!caps.vapid) return { ok: false, reason: 'no_vapid' }
+  if (!caps.serviceWorker || !caps.pushManager) return { ok: false, reason: 'no_sw' }
 
   try {
     const permission = await requestNotificationPermission()
-    if (permission !== 'granted') return false
+    if (permission !== 'granted') return { ok: false, reason: permission === 'denied' ? 'denied' : 'permission' }
 
     const reg = await navigator.serviceWorker.ready
     let sub = await reg.pushManager.getSubscription()
@@ -59,10 +76,10 @@ export async function subscribeToPush(userId) {
     }, { onConflict: 'user_id,endpoint' })
 
     await supabase.from('profiles').update({ push_enabled: true }).eq('id', userId)
-    return true
+    return { ok: true }
   } catch (err) {
     console.warn('Push subscription failed:', err)
-    return false
+    return { ok: false, reason: 'failed' }
   }
 }
 
