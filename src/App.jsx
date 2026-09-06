@@ -29,6 +29,7 @@ import Onboarding from './pages/Onboarding'
 import AppLayout from './components/AppLayout'
 import { SessionProfileContext } from './context/SessionProfile'
 import { checkPendingNotifications } from './utils/notifications'
+import { isSiteOwnerId } from './utils/siteOwner'
 
 const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, salon_owner_id, onboarding_done, last_seen_at, business_name, subscription_plans(name, price, features)'
 const PROFILE_SELECT_FALLBACK = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
@@ -54,7 +55,7 @@ export default function App() {
     }
 
     let assembled = data || null
-    const rawIsAdmin = assembled?.is_admin === true
+    const rawIsAdmin = assembled?.is_admin === true || isSiteOwnerId(userId)
     if (assembled?.salon_owner_id && !rawIsAdmin) {
       const { data: owner } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', assembled.salon_owner_id).single()
       const { data: sm } = await supabase.from('staff_members').select('id').eq('auth_user_id', userId).maybeSingle()
@@ -84,7 +85,6 @@ export default function App() {
     setProfile(assembled)
     setBloqueado(assembled?.is_blocked === true)
     setProfileChecked(true)
-    supabase.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', userId).then(() => {})
   }
 
   useEffect(() => {
