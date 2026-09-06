@@ -54,7 +54,8 @@ export default function App() {
     }
 
     let assembled = data || null
-    if (assembled?.salon_owner_id && assembled.is_admin !== true) {
+    const rawIsAdmin = assembled?.is_admin === true
+    if (assembled?.salon_owner_id && !rawIsAdmin) {
       const { data: owner } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', assembled.salon_owner_id).single()
       const { data: sm } = await supabase.from('staff_members').select('id').eq('auth_user_id', userId).maybeSingle()
       assembled = {
@@ -74,6 +75,10 @@ export default function App() {
         is_staff: false,
         workspace_id: userId,
       }
+    }
+
+    if (assembled && rawIsAdmin) {
+      assembled = { ...assembled, is_admin: true, is_staff: false }
     }
 
     setProfile(assembled)
