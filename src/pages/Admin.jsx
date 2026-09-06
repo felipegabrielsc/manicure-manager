@@ -4,8 +4,10 @@ import { supabase } from '../supabaseClient'
 import { Link } from 'react-router-dom'
 import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet, Lock, Unlock, UserX, Mail, Crown } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSessionProfile } from '../context/SessionProfile'
 
 export default function Admin() {
+  const { profile } = useSessionProfile()
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   
@@ -25,16 +27,20 @@ export default function Admin() {
 
   useEffect(() => {
     checkAdmin()
-  }, [])
+  }, [profile?.is_admin])
 
   async function checkAdmin() {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      setIsAdmin(false)
+      setLoading(false)
+      return
+    }
 
-    // 1. Verifica se é Admin
     const { data: perfil } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
-    
-    if (perfil?.is_admin) {
+    const admin = !!(perfil?.is_admin || profile?.is_admin)
+
+    if (admin) {
         setIsAdmin(true)
         
         // 2. Busca TODAS as manicures (select * já pega o email agora)
@@ -74,6 +80,8 @@ export default function Admin() {
               return visto && agora - visto > seteDias
             }))
         }
+    } else {
+        setIsAdmin(false)
     }
     setLoading(false)
   }
