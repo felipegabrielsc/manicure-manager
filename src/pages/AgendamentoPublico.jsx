@@ -145,7 +145,7 @@ export default function AgendamentoPublico() {
 
     if (error || !result?.ok) {
       setLoading(false)
-      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 022 no Supabase.')
+      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 023 no Supabase.')
     }
 
     setLoading(false)
