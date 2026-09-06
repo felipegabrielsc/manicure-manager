@@ -43,6 +43,7 @@ supabase/migrations/007_mensalidade_vencimento.sql
 supabase/migrations/008_fix_incrementar_fidelidade.sql
 supabase/migrations/009_phase_g_ops.sql
 supabase/migrations/010_admin_unlock_code.sql
+supabase/migrations/011_admin_unlock_bypass.sql
 ```
 
 **Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
@@ -176,7 +177,7 @@ Se a única conta admin for bloqueada, use o **código de liberação** em Confi
 UPDATE app_settings SET value = 'seu-codigo-secreto' WHERE key = 'admin_unlock_code';
 ```
 
-Rode `010_admin_unlock_code.sql` antes. O padrão do arquivo é `troque-este-codigo-admin` — mude isso.
+Rode `010_admin_unlock_code.sql` e `011_admin_unlock_bypass.sql` antes. O padrão do arquivo é `troque-este-codigo-admin` — mude isso.
 
 ## Recuperação de senha
 
