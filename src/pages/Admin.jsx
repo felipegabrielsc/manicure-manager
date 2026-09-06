@@ -107,7 +107,10 @@ export default function Admin() {
     const { data, error } = await supabase.rpc('criar_convite', { p_email: null })
     setGerando(false)
     if (error || !data?.ok) {
-      return toast.error(data?.reason || 'Erro ao criar convite. Rode a migration 005 no Supabase.')
+      const missing = error?.code === 'PGRST202' || /404|does not exist|could not find/i.test(error?.message || '')
+      return toast.error(missing
+        ? 'Rode o SQL 014 no Supabase (criar_convite).'
+        : (data?.reason || 'Erro ao criar convite. Rode o SQL 005 ou 014 no Supabase.'))
     }
     const link = `${window.location.origin}/cadastro-vip?token=${data.token}`
     await navigator.clipboard.writeText(link)
