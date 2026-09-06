@@ -1,11 +1,13 @@
 // src/pages/Clientes.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, Search, User, Plus, Trash2, Edit2, X, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Search, User, Plus, HelpCircle } from 'lucide-react'
+import ClientDetailSheet from '../components/ClientDetailSheet'
+import { labelPagamento } from '../components/pagamentoLabels'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import Modal from '../components/Modal'
-import { monthRangeLocal, formatCivilDate, money } from '../utils/dates'
+import { monthRangeLocal, money } from '../utils/dates'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 
@@ -30,6 +32,7 @@ export default function Clientes() {
 
   // Estados para Modal de Histórico
   const [clienteDetalheId, setClienteDetalheId] = useState(null)
+  const [loyaltySettings, setLoyaltySettings] = useState(null)
 
   // Estados para o Modal de Confirmação (Delete)
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
@@ -86,6 +89,9 @@ export default function Clientes() {
     const { data: clientsData, error: errClients } = await supabase.from('clients').select('*').order('name')
     if (errClients) { toast.error('Erro ao carregar clientes'); setLoading(false); return; }
 
+    const { data: loyalty } = await supabase.from('loyalty_settings').select('visits_required, reward_description, active').maybeSingle()
+    setLoyaltySettings(loyalty)
+
     let query = supabase.from('appointments').select('id, client_id, agreed_price, start_time, payment_method, services(name)').eq('status', 'CONCLUIDO')
 
     let txQuery = supabase
@@ -100,7 +106,11 @@ export default function Clientes() {
         txQuery = txQuery.gte('date', startDay).lte('date', `${endDay}T23:59:59`)
     }
 
-    const [{ data: appointmentsData }, { data: transacoesData }] = await Promise.all([query, txQuery])
+    const [{ data: appointmentsData }, { data: transacoesData }, { data: pendentesData }] = await Promise.all([
+      query,
+      txQuery,
+      supabase.from('appointments').select('id, client_id, agreed_price').in('status', ['PENDENTE', 'AGENDADO']),
+    ])
 
     const clientesComGasto = clientsData.map(cliente => {
         const servicos = (appointmentsData || [])
@@ -127,8 +137,11 @@ export default function Clientes() {
           }))
         const historico = [...servicos, ...compras].sort((a, b) => String(b.date).localeCompare(String(a.date)))
         const totalGasto = historico.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
+        const aReceber = (pendentesData || [])
+          .filter(app => app.client_id == cliente.id)
+          .reduce((acc, app) => acc + (Number(app.agreed_price) || 0), 0)
 
-        return { ...cliente, totalGasto, historico }
+        return { ...cliente, totalGasto, historico, aReceber }
     })
 
     clientesComGasto.sort((a, b) => b.totalGasto - a.totalGasto)
@@ -240,7 +253,6 @@ export default function Clientes() {
   const clientesPorNome = [...clientes].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
   const clienteDetalhe = clientes.find(c => c.id === clienteDetalheId)
   const historicoDetalhe = clienteDetalhe ? itensFiltradosDe(clienteDetalhe.historico) : []
-  const totalDetalhe = historicoDetalhe.reduce((acc, item) => acc + (Number(item.amount) || 0), 0)
 
   const escolherClienteFoco = (id) => {
     setClienteFocoId(id)
@@ -385,69 +397,20 @@ export default function Clientes() {
         )}
       </div>
 
-      {/* --- MODAL HISTÓRICO --- */}
       {clienteDetalhe && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={(e) => { if(e.target === e.currentTarget) setClienteDetalheId(null) }}>
-            <div style={{ background: 'white', width: '100%', maxWidth: '600px', borderRadius: '20px 20px 0 0', padding: '25px', maxHeight: '80vh', overflowY: 'auto', animation: 'slideUp 0.3s ease-out' }}>
-                
-                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'16px'}}>
-                    <div>
-                        <h2 style={{margin:0}}>{clienteDetalhe.name}</h2>
-                        <p style={{margin:0, color:'#666', fontSize:'14px'}}>Extrato ({filtroPeriodo === 'MES' ? 'mês atual' : 'todo o período'})</p>
-                    </div>
-                    <button onClick={() => setClienteDetalheId(null)} style={{background:'none', border:'none'}}><X/></button>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '8px' }}>
-                  {[['TODOS', 'Tudo'], ['SERVICOS', 'Serviços'], ['COMPRAS', 'Compras']].map(([id, label]) => (
-                    <button key={id} onClick={() => setFiltroTipo(id)} style={chipFiltro(filtroTipo === id)}>{label}</button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '16px' }}>
-                  {[['TODOS', 'Pagamento'], ['PIX', 'PIX'], ['DINHEIRO', 'Dinheiro'], ['CARTAO', 'Cartão'], ['MENSALIDADE', 'Mensalidade']].map(([id, label]) => (
-                    <button key={id} onClick={() => setFiltroPagamento(id)} style={chipFiltro(filtroPagamento === id)}>{label}</button>
-                  ))}
-                </div>
-
-                <div style={{background:'#f0fdf4', padding:'15px', borderRadius:'12px', textAlign:'center', marginBottom:'20px', border:'1px solid #bbf7d0'}}>
-                    <span style={{color:'#166534', fontSize:'12px', fontWeight:'bold'}}>{rotuloTotal(filtroTipo, filtroPagamento)}</span>
-                    <div style={{fontSize:'32px', fontWeight:'bold', color:'#15803d'}}>R$ {money(totalDetalhe)}</div>
-                    <span style={{color:'#166534', fontSize:'12px'}}>{historicoDetalhe.length} lançamento(s)</span>
-                </div>
-
-                <h4 style={{marginBottom:'10px', color:'#64748b'}}>Histórico:</h4>
-                {historicoDetalhe.length === 0 ? (
-                    <p style={{textAlign:'center', color:'#999'}}>Nada neste filtro para esta cliente.</p>
-                ) : (
-                    <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-                        {historicoDetalhe.map((item) => (
-                            <div key={item.id} style={{display:'flex', justifyContent:'space-between', padding:'10px', borderBottom:'1px solid #f1f5f9'}}>
-                                <div>
-                                    <strong style={{display:'block', fontSize:'14px', color:'#333'}}>{item.titulo}</strong>
-                                    <span style={{fontSize:'12px', color:'#999'}}>
-                                        {item.tipo === 'servico' ? 'Serviço' : 'Compra'}
-                                        {' · '}
-                                        {formatCivilDate(item.date) || new Date(item.date).toLocaleDateString('pt-BR')}
-                                        {item.payment_method ? ` · ${labelPagamento(item.payment_method)}` : ''}
-                                    </span>
-                                </div>
-                                <span style={{fontWeight:'bold', color:'#16a34a'}}>R$ {money(item.amount)}</span>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
-                <div style={{display:'flex', gap:'10px', marginTop:'25px', borderTop:'1px solid #eee', paddingTop:'20px'}}>
-                    <button onClick={() => { const c = clienteDetalhe; setClienteDetalheId(null); abrirEdicao(c, { stopPropagation: ()=>{} }) }} style={{flex:1, padding:'12px', background:'white', border:'1px solid #2563eb', color:'#2563eb', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
-                        <Edit2 size={16}/> Editar
-                    </button>
-                    <button onClick={() => { confirmarExclusao(clienteDetalhe.id) }} style={{flex:1, padding:'12px', background:'#fee2e2', border:'none', color:'#dc2626', borderRadius:'8px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px'}}>
-                        <Trash2 size={16}/> Excluir
-                    </button>
-                </div>
-
-            </div>
-        </div>
+        <ClientDetailSheet
+          cliente={clienteDetalhe}
+          historico={historicoDetalhe}
+          filtroPeriodo={filtroPeriodo}
+          filtroTipo={filtroTipo}
+          filtroPagamento={filtroPagamento}
+          onFiltroTipo={setFiltroTipo}
+          onFiltroPagamento={setFiltroPagamento}
+          loyaltySettings={loyaltySettings}
+          onClose={() => setClienteDetalheId(null)}
+          onEdit={() => { const c = clienteDetalhe; setClienteDetalheId(null); abrirEdicao(c, { stopPropagation: () => {} }) }}
+          onDelete={() => confirmarExclusao(clienteDetalhe.id)}
+        />
       )}
 
       {/* --- MODAL NOVO/EDITAR --- */}
@@ -544,12 +507,4 @@ function rotuloTotal(filtroTipo, filtroPagamento) {
   const tipo = filtroTipo === 'SERVICOS' ? 'SERVIÇOS' : filtroTipo === 'COMPRAS' ? 'COMPRAS' : 'TOTAL'
   if (filtroPagamento === 'TODOS') return tipo
   return `${tipo} · ${labelPagamento(filtroPagamento)}`
-}
-
-function labelPagamento(metodo) {
-  if (metodo === 'PIX') return 'PIX'
-  if (metodo === 'DINHEIRO') return 'Dinheiro'
-  if (metodo === 'CARTAO') return 'Cartão'
-  if (metodo === 'MENSALIDADE') return 'Mensalidade'
-  return metodo
 }

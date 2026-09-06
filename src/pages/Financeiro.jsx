@@ -4,6 +4,8 @@ import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Tr
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import FinanceOverview from '../components/FinanceOverview'
+import { dailyCompare, sliceUntilDay, classifyNewVsReturning, topClientsByVisits, paymentMix } from '../utils/financeInsights'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { exportToCsv, exportToPrint } from '../utils/exportReport'
@@ -51,6 +53,7 @@ export default function Financeiro() {
   const [metaMes, setMetaMes] = useState(0)
   const [editandoMeta, setEditandoMeta] = useState(false)
   const [metaInput, setMetaInput] = useState('')
+  const [overview, setOverview] = useState(null)
 
   const mesFormatado = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dataAtual)
 
@@ -77,12 +80,29 @@ export default function Financeiro() {
     setLoading(true)
     const { start, end, startDay, endDay } = monthRangeLocal(dataAtual)
 
+    const prevDate = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 1, 1)
+    const prevRange = monthRangeLocal(prevDate)
+
     const { data: agendamentos } = await supabase
       .from('appointments')
       .select('id, agreed_price, start_time, client_id, payment_method, staff_id, staff_members (name, commission_percent), clients (name, type), services (name)')
       .gte('start_time', start.toISOString())
       .lte('start_time', end.toISOString())
       .eq('status', 'CONCLUIDO')
+
+    const { data: prevAgendamentos } = await supabase
+      .from('appointments')
+      .select('id, agreed_price, start_time, client_id, payment_method, clients (name)')
+      .gte('start_time', prevRange.start.toISOString())
+      .lte('start_time', prevRange.end.toISOString())
+      .eq('status', 'CONCLUIDO')
+
+    const { data: pendentesMes } = await supabase
+      .from('appointments')
+      .select('agreed_price')
+      .gte('start_time', start.toISOString())
+      .lte('start_time', end.toISOString())
+      .in('status', ['PENDENTE', 'AGENDADO'])
 
     const lookback = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 2, 1)
     const { data: agendamentosCobranca } = await supabase
@@ -97,6 +117,12 @@ export default function Financeiro() {
       .select('*')
       .gte('date', startDay)
       .lte('date', `${endDay}T23:59:59`)
+
+    const { data: prevTransacoes } = await supabase
+      .from('transactions')
+      .select('*')
+      .gte('date', prevRange.startDay)
+      .lte('date', `${prevRange.endDay}T23:59:59`)
 
     const { data: itens } = await supabase.from('inventory_items').select('*').order('name')
     setEstoque(itens || [])
@@ -188,6 +214,90 @@ export default function Financeiro() {
       porStaff[a.staff_id].comissao += valor * (pct / 100)
     })
     setComissoes(Object.values(porStaff))
+
+    const y = dataAtual.getFullYear()
+    const m = dataAtual.getMonth()
+    const mesAtualNome = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(dataAtual)
+    const mesAntNome = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(prevDate)
+
+    const prevAgendaFmt = (prevAgendamentos || [])
+      .filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE')
+      .map(a => ({ date: a.start_time, amount: Number(a.agreed_price), type: 'RECEITA', payment_method: a.payment_method }))
+    const prevManualFmt = (prevTransacoes || []).map(t => ({
+      date: t.date,
+      amount: Number(t.amount),
+      type: t.type,
+      payment_method: t.payment_method,
+    }))
+    const prevLista = [...prevAgendaFmt, ...prevManualFmt]
+    const recNow = listaFinal.filter(x => x.type === 'RECEITA').map(x => ({ date: x.date, amount: x.amount }))
+    const recPrev = prevLista.filter(x => x.type === 'RECEITA').map(x => ({ date: x.date, amount: x.amount }))
+    const moneyRows = dailyCompare(recNow, recPrev, y, m)
+    const aptRows = dailyCompare(
+      (agendamentos || []).map(a => ({ date: a.start_time, amount: 0 })),
+      (prevAgendamentos || []).map(a => ({ date: a.start_time, amount: 0 })),
+      y, m,
+    )
+    const daily = moneyRows.map((row, i) => ({
+      ...row,
+      qtdAtual: aptRows[i]?.qtdAtual || 0,
+      qtdAnterior: aptRows[i]?.qtdAnterior || 0,
+    }))
+
+    const hoje = new Date()
+    const diaCorte = (hoje.getFullYear() === y && hoje.getMonth() === m) ? hoje.getDate() : new Date(y, m + 1, 0).getDate()
+    const ateHoje = sliceUntilDay(daily, diaCorte)
+
+    const faturamento = recNow.reduce((acc, x) => acc + x.amount, 0)
+    const despesas = listaFinal.filter(x => x.type === 'DESPESA').reduce((acc, x) => acc + Number(x.amount), 0)
+    const prevFat = recPrev.reduce((acc, x) => acc + x.amount, 0)
+    const prevDesp = prevLista.filter(x => x.type === 'DESPESA').reduce((acc, x) => acc + Number(x.amount), 0)
+    const servicoFat = agendaFormatada.reduce((acc, x) => acc + x.amount, 0)
+    const prevServicoFat = prevAgendaFmt.reduce((acc, x) => acc + x.amount, 0)
+    const atendimentos = (agendamentos || []).length
+    const prevAtend = (prevAgendamentos || []).length
+    const ticket = atendimentos ? servicoFat / atendimentos : 0
+    const prevTicket = prevAtend ? prevServicoFat / prevAtend : 0
+
+    const monthIds = (agendamentos || []).map(a => a.client_id).filter(Boolean)
+    const uniqueIds = [...new Set(monthIds)]
+    let priorSet = new Set()
+    if (uniqueIds.length) {
+      const { data: prior } = await supabase
+        .from('appointments')
+        .select('client_id')
+        .eq('status', 'CONCLUIDO')
+        .lt('start_time', start.toISOString())
+        .in('client_id', uniqueIds)
+      priorSet = new Set((prior || []).map(p => p.client_id))
+    }
+
+    setOverview({
+      mesLabel: `${mesAtualNome}/${y}`,
+      mesAnteriorLabel: `${mesAntNome}/${prevDate.getFullYear()}`,
+      kpis: {
+        faturamento,
+        despesas,
+        lucro: faturamento - despesas,
+        atendimentos,
+        ticket,
+        prevFaturamento: prevFat,
+        prevLucro: prevFat - prevDesp,
+        prevAtendimentos: prevAtend,
+        prevTicket,
+      },
+      daily,
+      comparacao: { dia: diaCorte, ...ateHoje },
+      projecao: {
+        confirmado: faturamento,
+        pendente: (pendentesMes || []).reduce((acc, a) => acc + (Number(a.agreed_price) || 0), 0),
+      },
+      clientes: {
+        ...classifyNewVsReturning(monthIds, priorSet),
+        top5: topClientsByVisits(agendamentos),
+      },
+      pagamentos: paymentMix(listaFinal.filter(x => x.type === 'RECEITA')),
+    })
 
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
@@ -454,6 +564,19 @@ export default function Financeiro() {
             <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>Defina uma meta mensal para acompanhar seu progresso.</p>
           )}
         </div>
+
+        {overview && (
+          <FinanceOverview
+            mesLabel={overview.mesLabel}
+            mesAnteriorLabel={overview.mesAnteriorLabel}
+            kpis={overview.kpis}
+            daily={overview.daily}
+            comparacao={overview.comparacao}
+            projecao={overview.projecao}
+            clientes={overview.clientes}
+            pagamentos={overview.pagamentos}
+          />
+        )}
 
         <div id="fin-grafico" style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #eee' }}>
           <h3 style={{ marginTop: 0, fontSize: '14px', color: '#666', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
