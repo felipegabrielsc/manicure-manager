@@ -154,12 +154,23 @@ DROP POLICY IF EXISTS staff_invites_owner ON staff_invites;
 CREATE POLICY staff_invites_owner ON staff_invites
   FOR ALL USING (owner_id = auth.uid()) WITH CHECK (owner_id = auth.uid());
 
+CREATE OR REPLACE FUNCTION public.my_salon_owner_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT p.salon_owner_id FROM public.profiles p WHERE p.id = auth.uid();
+$$;
+GRANT EXECUTE ON FUNCTION public.my_salon_owner_id() TO authenticated;
+
 DROP POLICY IF EXISTS profiles_select_own_or_admin ON profiles;
 CREATE POLICY profiles_select_own_or_admin ON profiles
   FOR SELECT USING (
     auth.uid() = id
     OR public.current_user_is_admin()
-    OR id = (SELECT salon_owner_id FROM profiles p WHERE p.id = auth.uid())
+    OR id = public.my_salon_owner_id()
     OR salon_owner_id = auth.uid()
   );
 

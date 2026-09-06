@@ -80,6 +80,14 @@ export default function App() {
 
     if (assembled && rawIsAdmin) {
       assembled = { ...assembled, is_admin: true, is_staff: false }
+    } else if (!assembled && isSiteOwnerId(userId)) {
+      assembled = {
+        id: userId,
+        is_admin: true,
+        is_staff: false,
+        onboarding_done: true,
+        workspace_id: userId,
+      }
     }
 
     setProfile(assembled)

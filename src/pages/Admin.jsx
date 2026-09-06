@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet, Lock, Unlock, UserX, Mail, Crown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSessionProfile } from '../context/SessionProfile'
+import { isSiteOwnerId } from '../utils/siteOwner'
 
 export default function Admin() {
   const { profile } = useSessionProfile()
@@ -37,8 +38,8 @@ export default function Admin() {
       return
     }
 
-    const { data: perfil } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
-    const admin = !!(perfil?.is_admin || profile?.is_admin)
+    const { data: perfil } = await supabase.from('profiles').select('is_admin').eq('id', user.id).maybeSingle()
+    const admin = !!(perfil?.is_admin || profile?.is_admin || isSiteOwnerId(user.id))
 
     if (admin) {
         setIsAdmin(true)
