@@ -52,9 +52,20 @@ const TITLES = {
 export default function AppLayout() {
   const location = useLocation()
   const { profile } = useSessionProfile()
-  const isAdmin = !!profile?.is_admin
   const isStaff = !!profile?.is_staff
+  const [adminFromDb, setAdminFromDb] = useState(false)
   const [menuAberto, setMenuAberto] = useState(false)
+  const isAdmin = !!profile?.is_admin || adminFromDb
+
+  useEffect(() => {
+    let cancelled = false
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data } = await supabase.from('profiles').select('is_admin').eq('id', user.id).maybeSingle()
+      if (!cancelled) setAdminFromDb(data?.is_admin === true)
+    })
+    return () => { cancelled = true }
+  }, [profile?.is_admin, location.pathname])
 
   useEffect(() => {
     setMenuAberto(false)
