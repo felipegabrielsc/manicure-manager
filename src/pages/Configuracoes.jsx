@@ -437,7 +437,7 @@ export default function Configuracoes() {
             <p style={{ color: '#16a34a', fontSize: '14px', margin: 0 }}>Esta conta já é administradora. O menu Admin aparece na barra lateral.</p>
           ) : (
             <>
-              <p style={{ color: '#64748b', fontSize: '13px' }}>Se você é a dona do sistema e perdeu o acesso, cole o código mestre. Isso não é o plano Pro — é só o painel de dono.</p>
+              <p style={{ color: '#64748b', fontSize: '13px' }}>Se você é a dona do sistema e perdeu o acesso, cole o código mestre. Isso não é o plano Pro — é só o painel de dono. O SQL 011 precisa ter sido executado no Supabase (o deploy da Vercel não faz isso).</p>
               <UnlockAdminForm onUnlocked={() => refreshProfile?.()} />
             </>
           )}

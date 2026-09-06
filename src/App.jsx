@@ -54,7 +54,7 @@ export default function App() {
     }
 
     let assembled = data || null
-    if (assembled?.salon_owner_id) {
+    if (assembled?.salon_owner_id && assembled.is_admin !== true) {
       const { data: owner } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', assembled.salon_owner_id).single()
       const { data: sm } = await supabase.from('staff_members').select('id').eq('auth_user_id', userId).maybeSingle()
       assembled = {
@@ -105,6 +105,16 @@ export default function App() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    function onVis() {
+      if (document.visibilityState !== 'visible') return
+      const uid = session?.user?.id
+      if (uid) loadProfile(uid)
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [session?.user?.id])
 
   useEffect(() => {
     if (!session?.user?.id) return
