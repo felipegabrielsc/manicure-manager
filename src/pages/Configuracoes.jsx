@@ -438,7 +438,7 @@ export default function Configuracoes() {
           ) : (
             <>
               <p style={{ color: '#64748b', fontSize: '13px' }}>Se você é a dona do sistema e perdeu o acesso, cole o código mestre. Isso não é o plano Pro — é só o painel de dono.</p>
-              <UnlockAdminForm onUnlocked={async () => { await refreshProfile?.(); window.location.assign('/admin') }} />
+              <UnlockAdminForm onUnlocked={() => refreshProfile?.()} />
             </>
           )}
         </div>
