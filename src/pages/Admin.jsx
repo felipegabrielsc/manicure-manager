@@ -104,15 +104,29 @@ export default function Admin() {
 
   const gerarConvite = async () => {
     setGerando(true)
-    const { data, error } = await supabase.rpc('criar_convite', { p_email: null })
-    setGerando(false)
-    if (error || !data?.ok) {
-      const missing = error?.code === 'PGRST202' || /404|does not exist|could not find/i.test(error?.message || '')
-      return toast.error(missing
-        ? 'Rode o SQL 014 no Supabase (criar_convite).'
-        : (data?.reason || 'Erro ao criar convite. Rode o SQL 005 ou 014 no Supabase.'))
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setGerando(false)
+      return toast.error('Faça login')
     }
-    const link = `${window.location.origin}/cadastro-vip?token=${data.token}`
+
+    const bytes = new Uint8Array(24)
+    crypto.getRandomValues(bytes)
+    const token = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('')
+    const expires = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { error } = await supabase.from('invites').insert({
+      token,
+      created_by: user.id,
+      expires_at: expires,
+    })
+    setGerando(false)
+    if (error) {
+      return toast.error(error.message.includes('invites') || error.code === '42P01' || error.code === 'PGRST205'
+        ? 'Rode o SQL 015 no Supabase (tabela invites).'
+        : (error.message || 'Não foi possível gerar o convite.'))
+    }
+    const link = `${window.location.origin}/cadastro-vip?token=${token}`
     await navigator.clipboard.writeText(link)
     toast.success('Convite gerado e copiado. Vale 14 dias, uso único.')
     checkAdmin()
