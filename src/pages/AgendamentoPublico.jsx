@@ -260,7 +260,7 @@ export default function AgendamentoPublico() {
                           padding: '10px 6px',
                           borderRadius: '8px',
                           border: horaSelecionada === slot.value ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                          background: slot.kind === 'busy' ? '#f1f5f9' : slot.kind === 'break' ? '#fff7ed' : (horaSelecionada === slot.value ? '#eff6ff' : 'white'),
+                          background: slot.kind === 'busy' ? '#f1f5f9' : (horaSelecionada === slot.value ? '#eff6ff' : 'white'),
                           color: slot.disabled ? '#94a3b8' : '#1e293b',
                           fontWeight: horaSelecionada === slot.value ? 'bold' : 'normal',
                           cursor: slot.disabled ? 'not-allowed' : 'pointer',
@@ -268,7 +268,7 @@ export default function AgendamentoPublico() {
                           textDecoration: slot.kind === 'busy' ? 'line-through' : 'none',
                         }}
                       >
-                        {slot.kind === 'busy' ? `${slot.label} ocupado` : slot.kind === 'break' ? `${slot.label} almoço` : slot.label}
+                        {slot.kind === 'busy' ? `${slot.label} ocupado` : slot.label}
                       </button>
                     ))}
                   </div>

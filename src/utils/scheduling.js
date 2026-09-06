@@ -190,16 +190,7 @@ export function generateAvailableSlots({
     const overlapsBreak = window.breakStartMinutes != null
       && min < window.breakEndMinutes
       && min + durationMinutes > window.breakStartMinutes
-    if (overlapsBreak) {
-      slots.push({
-        start,
-        label: minutesToTimeStr(min),
-        value: `break-${min}`,
-        kind: 'break',
-        disabled: true,
-      })
-      continue
-    }
+    if (overlapsBreak) continue
 
     const conflict = busy.some(b => intervalBlocksSlot(b, staffId) && overlaps(start, end, b.start, b.end))
     slots.push({
