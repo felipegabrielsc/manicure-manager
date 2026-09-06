@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import toast from 'react-hot-toast'
 
 export default function UnlockAdminForm({ onUnlocked }) {
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
 
   async function submit(e) {
     e.preventDefault()
@@ -17,7 +19,7 @@ export default function UnlockAdminForm({ onUnlocked }) {
     }
     toast.success('Conta de administrador liberada.')
     if (onUnlocked) await onUnlocked()
-    else window.location.reload()
+    navigate('/admin', { replace: true })
   }
 
   return (

@@ -44,7 +44,7 @@ export default function Bloqueado() {
 
         <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0', textAlign: 'left' }}>
           <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Dona do sistema? Use o código de liberação:</p>
-          <UnlockAdminForm onUnlocked={async () => { await refreshProfile?.(); window.location.reload() }} />
+          <UnlockAdminForm onUnlocked={() => refreshProfile?.()} />
         </div>
       </div>
 
