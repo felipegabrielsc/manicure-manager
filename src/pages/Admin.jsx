@@ -104,7 +104,7 @@ export default function Admin() {
 
   const gerarConvite = async () => {
     setGerando(true)
-    const { data, error } = await supabase.rpc('criar_convite', { p_email: null })
+    const { data, error } = await supabase.rpc('criar_convite')
     setGerando(false)
     if (error || !data?.ok) {
       const missing = error?.code === 'PGRST202' || /404|does not exist|could not find/i.test(error?.message || '')
