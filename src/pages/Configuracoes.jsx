@@ -5,12 +5,15 @@ import { ArrowLeft, Copy, Save, Clock, Globe, User, Lock, Unlock, Loader2, HelpC
 import { subscribeToPush, unsubscribePush, getPushCapabilities } from '../utils/notifications'
 import { toTimeInput } from '../utils/dates'
 import { exportClientsCsv } from '../utils/exportReport'
+import UnlockAdminForm from '../components/UnlockAdminForm'
+import { useSessionProfile } from '../context/SessionProfile'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 
 export default function Configuracoes() {
+  const { profile, refreshProfile } = useSessionProfile()
   const [userId, setUserId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [savingLock, setSavingLock] = useState(false)
@@ -426,6 +429,18 @@ export default function Configuracoes() {
             <button id="btn-salvar-geral" onClick={salvarDadosGerais} style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'10px' }}>
                 <Save size={20}/> Salvar Dados & Horários
             </button>
+        </div>
+
+        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px dashed #cbd5e1', marginTop: '20px' }}>
+          <h3 style={{ marginTop: 0, fontSize: '16px' }}>Código de liberação (admin)</h3>
+          {profile?.is_admin ? (
+            <p style={{ color: '#16a34a', fontSize: '14px', margin: 0 }}>Esta conta já é administradora. O menu Admin aparece na barra lateral.</p>
+          ) : (
+            <>
+              <p style={{ color: '#64748b', fontSize: '13px' }}>Se você é a dona do sistema e perdeu o acesso, cole o código mestre. Isso não é o plano Pro — é só o painel de dono.</p>
+              <UnlockAdminForm onUnlocked={async () => { await refreshProfile?.(); window.location.assign('/admin') }} />
+            </>
+          )}
         </div>
 
         <button id="btn-tutorial" onClick={iniciarTutorial} style={{ position: 'fixed', right: '20px', bottom: '20px', width: '50px', height: '50px', borderRadius: '50%', background: 'white', color: '#d97706', border: '2px solid #d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 20, cursor: 'pointer' }}>

@@ -117,17 +117,16 @@ export default function App() {
     return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Carregando...</div>
   }
 
-  // SE ESTIVER BLOQUEADO, RENDERIZA SÓ A TELA DE BLOQUEIO
-  if (session && bloqueado) {
-    return <Bloqueado />
-  }
+  const refreshProfile = () => session?.user?.id && loadProfile(session.user.id)
 
   return (
-    <SessionProfileContext.Provider value={{ profile, refreshProfile: () => session?.user?.id && loadProfile(session.user.id) }}>
+    <SessionProfileContext.Provider value={{ profile, refreshProfile }}>
     <BrowserRouter>
       <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
-      
-      <div style={{ minHeight: '100%', background: session ? 'transparent' : '#eef2f6' }}>
+
+      {session && bloqueado ? (
+        <Bloqueado />
+      ) : (
         <Routes>
           <Route path="/resumo/:id" element={<ResumoAgendamento />} />
           <Route path="/agendar/:userId" element={<AgendamentoPublico />} />
@@ -162,7 +161,7 @@ export default function App() {
             </>
           )}
         </Routes>
-      </div>
+      )}
     </BrowserRouter>
     </SessionProfileContext.Provider>
   )
