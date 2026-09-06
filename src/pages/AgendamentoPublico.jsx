@@ -134,7 +134,7 @@ export default function AgendamentoPublico() {
 
     const payload = {
       p_user_id: userId,
-      p_service_id: String(servicoId),
+      p_servico_codigo: String(servicoId),
       p_start_time: startTime.toISOString(),
       p_client_name: nome,
       p_phone: phone,
@@ -145,7 +145,7 @@ export default function AgendamentoPublico() {
 
     if (error || !result?.ok) {
       setLoading(false)
-      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 019 no Supabase.')
+      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 020 no Supabase.')
     }
 
     setLoading(false)
