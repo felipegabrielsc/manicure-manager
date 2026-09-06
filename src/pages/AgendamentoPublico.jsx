@@ -133,19 +133,19 @@ export default function AgendamentoPublico() {
     }
 
     const payload = {
-      p_user_id: userId,
-      p_servico_codigo: String(servicoId),
-      p_start_time: startTime.toISOString(),
-      p_client_name: nome,
-      p_phone: phone,
+      p_salon: userId,
+      p_servico: String(servicoId),
+      p_quando: startTime.toISOString(),
+      p_nome: nome,
+      p_whatsapp: phone,
     }
-    if (cupomCodigo.trim()) payload.p_coupon_code = cupomCodigo.trim()
+    if (cupomCodigo.trim()) payload.p_cupom = cupomCodigo.trim()
 
-    const { data: result, error } = await supabase.rpc('solicitar_horario_publico', payload)
+    const { data: result, error } = await supabase.rpc('marcar_horario_site', payload)
 
     if (error || !result?.ok) {
       setLoading(false)
-      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 021 no Supabase.')
+      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 022 no Supabase.')
     }
 
     setLoading(false)
