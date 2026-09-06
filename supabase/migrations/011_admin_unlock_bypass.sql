@@ -1,9 +1,6 @@
--- O código de liberação (010) marcava is_admin, mas o trigger
--- trg_protect_profile_sensitive desfazia porque a conta ainda não era admin.
--- Rode este arquivo no SQL Editor. Depois use o código de novo no app.
--- Se quiser liberar agora sem o app:
---   UPDATE profiles SET is_admin = true, is_blocked = false, onboarding_done = true, salon_owner_id = NULL
---   WHERE id = 'cole-o-uuid-da-sua-conta';
+-- Cole ESTE arquivo inteiro no Supabase → SQL Editor → Run.
+-- O GitHub/Vercel NÃO aplica SQL sozinho.
+-- No final aparece uma tabela: quem tem is_admin = true é a dona do sistema.
 
 CREATE OR REPLACE FUNCTION public.protect_profile_sensitive_fields()
 RETURNS trigger
@@ -75,6 +72,11 @@ BEGIN
   END IF;
 
   PERFORM set_config('app.bypass_profile_guard', 'on', true);
+  BEGIN
+    PERFORM set_config('session_replication_role', 'replica', true);
+  EXCEPTION
+    WHEN insufficient_privilege THEN NULL;
+  END;
 
   INSERT INTO profiles (id, is_admin, is_blocked, onboarding_done, subscription_status)
   VALUES (v_uid, true, false, true, 'active')
@@ -94,3 +96,27 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.ativar_admin_com_codigo(text) TO authenticated;
+
+-- No SQL Editor o ALTER TABLE funciona (no app, não).
+ALTER TABLE profiles DISABLE TRIGGER trg_protect_profile_sensitive;
+
+UPDATE profiles
+SET is_admin = true,
+    is_blocked = false,
+    onboarding_done = true,
+    salon_owner_id = NULL
+WHERE id = (
+  SELECT id FROM profiles
+  WHERE salon_owner_id IS NULL
+  ORDER BY created_at ASC NULLS LAST
+  LIMIT 1
+)
+AND NOT EXISTS (SELECT 1 FROM profiles WHERE is_admin IS TRUE);
+
+ALTER TABLE profiles ENABLE TRIGGER trg_protect_profile_sensitive;
+
+-- Confira o resultado: a sua linha precisa ter is_admin = true
+SELECT u.email, p.is_admin, p.business_name, p.id
+FROM auth.users u
+JOIN profiles p ON p.id = u.id
+ORDER BY p.is_admin DESC, u.created_at;
