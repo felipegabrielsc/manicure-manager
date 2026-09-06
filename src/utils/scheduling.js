@@ -50,11 +50,15 @@ export function getWeekDays(date) {
 
 function getBusinessWindowForDate(businessHours, date) {
   const dayOfWeek = date.getDay()
-  const config = businessHours?.find(h => h.day_of_week === dayOfWeek)
+  const config = businessHours?.find(h => Number(h.day_of_week) === dayOfWeek)
   if (!config || config.is_closed) return null
+  const breakStart = config.break_start ? parseTimeToMinutes(String(config.break_start).slice(0, 5)) : null
+  const breakEnd = config.break_end ? parseTimeToMinutes(String(config.break_end).slice(0, 5)) : null
   return {
     openMinutes: parseTimeToMinutes(config.open_time?.slice(0, 5) || '09:00'),
     closeMinutes: parseTimeToMinutes(config.close_time?.slice(0, 5) || '18:00'),
+    breakStartMinutes: breakStart != null && breakEnd != null && breakEnd > breakStart ? breakStart : null,
+    breakEndMinutes: breakStart != null && breakEnd != null && breakEnd > breakStart ? breakEnd : null,
   }
 }
 
@@ -142,6 +146,14 @@ export function validateBookingSlot({
     return { valid: false, reason: 'Horário ultrapassa o expediente.' }
   }
 
+  if (
+    window.breakStartMinutes != null
+    && startMinutes < window.breakEndMinutes
+    && endMinutes > window.breakStartMinutes
+  ) {
+    return { valid: false, reason: 'Horário de almoço.' }
+  }
+
   const busy = getBusyIntervals(appointments, blockedSlots, servicesMap, excludeAppointmentId)
 
   for (const interval of busy) {
@@ -175,14 +187,28 @@ export function generateAvailableSlots({
     const { start, end } = buildInterval(date, min, durationMinutes)
     if (start < now) continue
 
-    const conflict = busy.some(b => intervalBlocksSlot(b, staffId) && overlaps(start, end, b.start, b.end))
-    if (!conflict) {
+    const overlapsBreak = window.breakStartMinutes != null
+      && min < window.breakEndMinutes
+      && min + durationMinutes > window.breakStartMinutes
+    if (overlapsBreak) {
       slots.push({
         start,
         label: minutesToTimeStr(min),
-        value: start.toISOString(),
+        value: `break-${min}`,
+        kind: 'break',
+        disabled: true,
       })
+      continue
     }
+
+    const conflict = busy.some(b => intervalBlocksSlot(b, staffId) && overlaps(start, end, b.start, b.end))
+    slots.push({
+      start,
+      label: minutesToTimeStr(min),
+      value: conflict ? `busy-${min}` : start.toISOString(),
+      kind: conflict ? 'busy' : 'free',
+      disabled: conflict,
+    })
   }
 
   return slots

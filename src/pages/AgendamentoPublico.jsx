@@ -132,18 +132,20 @@ export default function AgendamentoPublico() {
       }
     }
 
-    const { data: result, error } = await supabase.rpc('criar_agendamento_publico', {
+    const payload = {
       p_user_id: userId,
-      p_service_id: servicoId,
+      p_service_id: String(servicoId),
       p_start_time: startTime.toISOString(),
       p_client_name: nome,
       p_phone: phone,
-      p_coupon_code: cupomCodigo || null,
-    })
+    }
+    if (cupomCodigo.trim()) payload.p_coupon_code = cupomCodigo.trim()
+
+    const { data: result, error } = await supabase.rpc('criar_agendamento_publico', payload)
 
     if (error || !result?.ok) {
       setLoading(false)
-      return toast.error(result?.reason || 'Erro ao agendar. Confira se a migration 004 foi aplicada no Supabase.')
+      return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 016 no Supabase.')
     }
 
     setLoading(false)
@@ -252,14 +254,21 @@ export default function AgendamentoPublico() {
                       <button
                         key={slot.value}
                         type="button"
-                        onClick={() => setHoraSelecionada(slot.value)}
+                        disabled={slot.disabled}
+                        onClick={() => !slot.disabled && setHoraSelecionada(slot.value)}
                         style={{
-                          padding: '10px 6px', borderRadius: '8px', border: horaSelecionada === slot.value ? '2px solid #2563eb' : '1px solid #cbd5e1',
-                          background: horaSelecionada === slot.value ? '#eff6ff' : 'white',
-                          color: '#1e293b', fontWeight: horaSelecionada === slot.value ? 'bold' : 'normal', cursor: 'pointer', fontSize: '14px',
+                          padding: '10px 6px',
+                          borderRadius: '8px',
+                          border: horaSelecionada === slot.value ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                          background: slot.kind === 'busy' ? '#f1f5f9' : slot.kind === 'break' ? '#fff7ed' : (horaSelecionada === slot.value ? '#eff6ff' : 'white'),
+                          color: slot.disabled ? '#94a3b8' : '#1e293b',
+                          fontWeight: horaSelecionada === slot.value ? 'bold' : 'normal',
+                          cursor: slot.disabled ? 'not-allowed' : 'pointer',
+                          fontSize: slot.kind === 'free' ? '14px' : '11px',
+                          textDecoration: slot.kind === 'busy' ? 'line-through' : 'none',
                         }}
                       >
-                        {slot.label}
+                        {slot.kind === 'busy' ? `${slot.label} ocupado` : slot.kind === 'break' ? `${slot.label} almoço` : slot.label}
                       </button>
                     ))}
                   </div>

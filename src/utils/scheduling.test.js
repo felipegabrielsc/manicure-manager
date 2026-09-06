@@ -53,6 +53,36 @@ describe('scheduling', () => {
     })
     expect(slots.length).toBeGreaterThan(0)
     expect(slots[0].label).toBe('09:00')
+    expect(slots.filter(s => s.kind === 'busy').length).toBe(0)
+  })
+
+  it('marca slot ocupado e pula almoço', () => {
+    const date = mondayAt(0)
+    date.setHours(0, 0, 0, 0)
+    const start = new Date(date)
+    start.setHours(10, 0, 0, 0)
+    const slots = generateAvailableSlots({
+      date,
+      durationMinutes: 60,
+      businessHours: [{
+        day_of_week: date.getDay(),
+        open_time: '09:00',
+        close_time: '18:00',
+        is_closed: false,
+        break_start: '12:00',
+        break_end: '13:00',
+      }],
+      appointments: [{
+        id: '1',
+        start_time: start.toISOString(),
+        status: 'AGENDADO',
+        services: { duration_minutes: 60 },
+      }],
+      blockedSlots: [],
+    })
+    expect(slots.find(s => s.label === '10:00')?.kind).toBe('busy')
+    expect(slots.find(s => s.label === '12:00')?.kind).toBe('break')
+    expect(slots.find(s => s.label === '09:00')?.kind).toBe('free')
   })
 
   it('bloqueia slot da mesma profissional', () => {

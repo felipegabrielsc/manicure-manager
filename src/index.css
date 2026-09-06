@@ -242,13 +242,21 @@ input, select, textarea, button {
   color: #fff;
 }
 
+.hours-block {
+  border-bottom: 1px solid #eee;
+  padding: 6px 0 10px;
+}
+
 .hours-row {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr) 12px minmax(0, 1fr) 76px;
   gap: 8px;
   align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid #eee;
+  padding: 6px 0;
+}
+
+.hours-break {
+  padding-top: 0;
 }
 
 .hours-row .day-name {
