@@ -81,7 +81,7 @@ describe('scheduling', () => {
       blockedSlots: [],
     })
     expect(slots.find(s => s.label === '10:00')?.kind).toBe('busy')
-    expect(slots.find(s => s.label === '12:00')?.kind).toBe('break')
+    expect(slots.find(s => s.label === '12:00')).toBeUndefined()
     expect(slots.find(s => s.label === '09:00')?.kind).toBe('free')
   })
 

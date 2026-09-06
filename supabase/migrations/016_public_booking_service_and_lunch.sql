@@ -4,10 +4,14 @@
 ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS break_start time;
 ALTER TABLE business_hours ADD COLUMN IF NOT EXISTS break_end time;
 
+DROP FUNCTION IF EXISTS public.validar_horario_agendamento(uuid, timestamptz, integer);
+DROP FUNCTION IF EXISTS public.validar_horario_agendamento(uuid, timestamptz, integer, uuid);
+
 CREATE OR REPLACE FUNCTION public.validar_horario_agendamento(
   p_user_id uuid,
   p_start_time timestamptz,
-  p_duration_minutes integer DEFAULT 60
+  p_duration_minutes integer DEFAULT 60,
+  p_staff_id uuid DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -39,7 +43,7 @@ BEGIN
 
   IF v_bh.break_start IS NOT NULL AND v_bh.break_end IS NOT NULL
      AND v_start_t < v_bh.break_end AND v_end_t > v_bh.break_start THEN
-    RETURN jsonb_build_object('valid', false, 'reason', 'Horário de almoço');
+    RETURN jsonb_build_object('valid', false, 'reason', 'Horário indisponível');
   END IF;
 
   SELECT COUNT(*) INTO v_conflict FROM appointments a
@@ -47,7 +51,12 @@ BEGIN
   WHERE a.user_id = p_user_id
     AND a.status IN ('AGENDADO', 'PENDENTE')
     AND tstzrange(a.start_time, a.start_time + (COALESCE(s.duration_minutes, 60) || ' minutes')::interval, '[)')
-        && tstzrange(p_start_time, v_end, '[)');
+        && tstzrange(p_start_time, v_end, '[)')
+    AND (
+      p_staff_id IS NULL
+      OR a.staff_id IS NULL
+      OR a.staff_id = p_staff_id
+    );
 
   IF v_conflict > 0 THEN
     RETURN jsonb_build_object('valid', false, 'reason', 'Horário ocupado');
@@ -260,7 +269,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.validar_horario_agendamento(uuid, timestamptz, integer) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.validar_horario_agendamento(uuid, timestamptz, integer, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_agenda_publica(uuid, date) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.criar_agendamento_publico(uuid, text, timestamptz, text, text, text) TO anon, authenticated;
 NOTIFY pgrst, 'reload schema';
