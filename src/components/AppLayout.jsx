@@ -21,6 +21,7 @@ import { useSessionProfile } from '../context/SessionProfile'
 import { hasFeature, FEATURE_BY_PATH } from '../utils/entitlements'
 import PlanGate from './PlanGate'
 import { isSiteOwnerId } from '../utils/siteOwner'
+import Modal from './Modal'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Agenda', icon: Calendar, id: 'nav-agenda', end: true },
@@ -57,6 +58,7 @@ export default function AppLayout() {
   const [adminFromDb, setAdminFromDb] = useState(false)
   const [loginEmail, setLoginEmail] = useState('')
   const [menuAberto, setMenuAberto] = useState(false)
+  const [sairAberto, setSairAberto] = useState(false)
   const isAdmin = !!profile?.is_admin || adminFromDb
 
   useEffect(() => {
@@ -78,8 +80,8 @@ export default function AppLayout() {
     setMenuAberto(false)
   }, [location.pathname])
 
-  async function handleLogout() {
-    if (!window.confirm('Sair da conta?')) return
+  async function confirmarSaida() {
+    setSairAberto(false)
     await supabase.auth.signOut()
     window.location.assign('/')
   }
@@ -137,7 +139,7 @@ export default function AppLayout() {
         <nav className="app-nav" id="menu-gestao">
           {renderNav(false)}
         </nav>
-        <button type="button" className="app-nav-link app-nav-logout" onClick={handleLogout} id="btn-logout">
+        <button type="button" className="app-nav-link app-nav-logout" onClick={() => setSairAberto(true)} id="btn-logout">
           <LogOut size={20} />
           <span>Sair</span>
         </button>
@@ -184,7 +186,7 @@ export default function AppLayout() {
               </button>
             </div>
             <nav className="app-nav">{renderNav(true)}</nav>
-            <button type="button" className="app-nav-link app-nav-logout" onClick={handleLogout}>
+            <button type="button" className="app-nav-link app-nav-logout" onClick={() => setSairAberto(true)}>
               <LogOut size={20} />
               <span>Sair</span>
             </button>
@@ -193,6 +195,16 @@ export default function AppLayout() {
             ) : null}
           </aside>
         </div>
+      )}
+      {sairAberto && (
+        <Modal
+          isOpen
+          type="confirm"
+          title="Sair da conta?"
+          message="Você vai desconectar deste aparelho. Pode entrar de novo quando quiser."
+          onClose={() => setSairAberto(false)}
+          onConfirm={confirmarSaida}
+        />
       )}
     </div>
   )

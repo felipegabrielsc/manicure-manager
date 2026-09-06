@@ -84,9 +84,11 @@ export default function Configuracoes() {
             ...found,
             open_time: toTimeInput(found.open_time, '09:00'),
             close_time: toTimeInput(found.close_time, '18:00'),
+            break_start: found.break_start ? toTimeInput(found.break_start, '') : '',
+            break_end: found.break_end ? toTimeInput(found.break_end, '') : '',
           })
         }
-        else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', is_closed: i === 0, user_id: user.id })
+        else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', break_start: '', break_end: '', is_closed: i === 0, user_id: user.id })
     }
     setHorarios(hoursMap)
 
@@ -119,6 +121,7 @@ export default function Configuracoes() {
   const updateHorario = (index, field, value) => {
     const newHorarios = [...horarios]
     if (field === 'open_time' || field === 'close_time') value = toTimeInput(value)
+    if (field === 'break_start' || field === 'break_end') value = value ? toTimeInput(value, '') : ''
     newHorarios[index][field] = value
     setHorarios(newHorarios)
   }
@@ -144,10 +147,12 @@ export default function Configuracoes() {
         reminder_hours_before: parseInt(horasLembrete, 10) || 24,
         booking_active: agendamentoAtivo,
     })
-    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, is_closed, user_id }) => ({
+    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed, user_id }) => ({
       day_of_week,
       open_time: toTimeInput(open_time, '09:00'),
       close_time: toTimeInput(close_time, '18:00'),
+      break_start: break_start ? toTimeInput(break_start) : null,
+      break_end: break_end ? toTimeInput(break_end) : null,
       is_closed,
       user_id,
     }))
@@ -399,10 +404,11 @@ export default function Configuracoes() {
 
         <div id="card-horarios" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd' }}>
             <h3 style={{ marginTop: 0, color: '#16a34a', display:'flex', alignItems:'center', gap:'10px' }}><Clock size={20}/> Horários</h3>
-            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>Uma linha por dia: aberto, fecha e se atende.</p>
+            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>Aberto e fecha. Opcional: almoço — nesse intervalo o site não deixa marcar.</p>
 
             {horarios.map((h, i) => (
-                <div key={h.day_of_week} className="hours-row">
+                <div key={h.day_of_week} className="hours-block">
+                    <div className="hours-row">
                     <span className="day-name" style={{ color: h.is_closed ? '#94a3b8' : '#334155' }}>{diasSemana[h.day_of_week]}</span>
                     <input
                       type="time"
@@ -424,6 +430,34 @@ export default function Configuracoes() {
                     >
                       {h.is_closed ? 'Fechado' : 'Aberto'}
                     </button>
+                    </div>
+                    {!h.is_closed && (
+                      <div className="hours-row hours-break">
+                        <span className="day-name" style={{ color: '#64748b', fontWeight: 600, fontSize: '12px' }}>Almoço</span>
+                        <input
+                          type="time"
+                          value={h.break_start ? toTimeInput(h.break_start, '') : ''}
+                          onChange={e => updateHorario(i, 'break_start', e.target.value)}
+                        />
+                        <span style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
+                        <input
+                          type="time"
+                          value={h.break_end ? toTimeInput(h.break_end, '') : ''}
+                          onChange={e => updateHorario(i, 'break_end', e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="hours-toggle"
+                          onClick={() => {
+                            const next = [...horarios]
+                            next[i] = { ...next[i], break_start: '', break_end: '' }
+                            setHorarios(next)
+                          }}
+                        >
+                          Sem
+                        </button>
+                      </div>
+                    )}
                 </div>
             ))}
 
