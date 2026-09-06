@@ -5,6 +5,7 @@ self.skipWaiting()
 clientsClaim()
 cleanupOutdatedCaches()
 precacheAndRoute(self.__WB_MANIFEST)
+// cache-bust: admin-nav-owner
 
 self.addEventListener('push', (event) => {
   let data = {}
