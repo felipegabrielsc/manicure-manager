@@ -132,30 +132,27 @@ export default function AgendamentoPublico() {
       }
     }
 
-    setLoading(false)
-    setEtapa(2)
-  }
-
-  async function finalizarAgendamento() {
-    setLoading(true)
-    const dataFinal = new Date(horaSelecionada)
-
     const { data: result, error } = await supabase.rpc('criar_agendamento_publico', {
       p_user_id: userId,
       p_service_id: servicoId,
-      p_start_time: dataFinal.toISOString(),
+      p_start_time: startTime.toISOString(),
       p_client_name: nome,
       p_phone: phone,
       p_coupon_code: cupomCodigo || null,
     })
 
     if (error || !result?.ok) {
-      toast.error(result?.reason || 'Erro ao agendar. Confira se a migration 004 foi aplicada no Supabase.')
       setLoading(false)
-      return
+      return toast.error(result?.reason || 'Erro ao agendar. Confira se a migration 004 foi aplicada no Supabase.')
     }
 
-    const wa = String(result.whatsapp || manicurePhone).replace(/\D/g, '')
+    setLoading(false)
+    setEtapa(2)
+  }
+
+  function abrirWhatsAppPedido() {
+    const dataFinal = new Date(horaSelecionada)
+    const wa = String(manicurePhone).replace(/\D/g, '')
     const horaLabel = dataFinal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     const msg = `Olá, sou *${nome}*! Solicitei um horário pelo site.\n📅 *${dataFinal.toLocaleDateString('pt-BR')} às ${horaLabel}*\nCódigo: *${codigoValidacao}*`
     if (wa) window.open(`https://wa.me/55${wa}?text=${encodeURIComponent(msg)}`, '_blank')
@@ -242,7 +239,7 @@ export default function AgendamentoPublico() {
                   <p style={{ color: '#64748b', fontSize: '14px' }}>Carregando horários...</p>
                 ) : slotsDisponiveis.length === 0 ? (
                   <div>
-                    <p style={{ color: '#dc2626', fontSize: '14px' }}>Nenhum horário livre nesta data.</p>
+                    <p style={{ color: '#dc2626', fontSize: '14px' }}>Nenhum horário livre nesta data. No painel da manicure, em Configurações, esse dia precisa estar aberto com horário de expediente.</p>
                     {esperaEnviada ? (
                       <p style={{ color: '#16a34a', fontSize: '14px' }}>Você já está na lista de espera. A manicure avisa no WhatsApp.</p>
                     ) : (
@@ -278,8 +275,8 @@ export default function AgendamentoPublico() {
             <h3 style={{ color: '#b45309' }}>Quase lá!</h3>
             <p style={{ color: '#666', marginBottom: '30px' }}>Envie o código abaixo para a manicure no WhatsApp.</p>
             <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', letterSpacing: '5px', color: '#d97706', marginBottom: '30px' }}>{codigoValidacao}</div>
-            <button onClick={finalizarAgendamento} disabled={loading} style={{ ...btn, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '0 auto' }}>
-              <Send size={20} /> {loading ? 'Salvando...' : 'Confirmar no WhatsApp'}
+            <button onClick={abrirWhatsAppPedido} style={{ ...btn, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '0 auto' }}>
+              <Send size={20} /> Avisar no WhatsApp
             </button>
           </div>
         )}
