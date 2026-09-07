@@ -260,12 +260,12 @@ export default function Clientes() {
   }
 
   return (
-    <div style={{ minHeight: '100%', background: '#f8fafc', paddingBottom: '80px', fontFamily: 'sans-serif' }}>
+    <div style={{ minHeight: '100%', background: '#eef2f6', paddingBottom: '80px' }}>
       
       <Modal isOpen={alertModal.isOpen} onClose={() => setAlertModal({...alertModal, isOpen: false})} type={alertModal.type} title={alertModal.title} message={alertModal.message} onConfirm={handleModalConfirm} />
 
       {/* CABEÇALHO */}
-      <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="ui-page-header">
         <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
             <Link to="/" style={{ color: '#000' }}><ArrowLeft size={24} /></Link>
             <h2 style={{ margin: 0, fontSize: '20px' }}>Clientes</h2>

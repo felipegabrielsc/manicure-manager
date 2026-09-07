@@ -44,7 +44,26 @@ supabase/migrations/008_fix_incrementar_fidelidade.sql
 supabase/migrations/009_phase_g_ops.sql
 supabase/migrations/010_admin_unlock_code.sql
 supabase/migrations/011_admin_unlock_bypass.sql
+supabase/migrations/012_admin_clear_staff_link.sql
+supabase/migrations/013_fix_profiles_select_rls.sql
+supabase/migrations/014_criar_convite_e_horarios.sql
+supabase/migrations/015_invites_table_grants.sql
+supabase/migrations/016_public_booking_service_and_lunch.sql
+supabase/migrations/017_fix_validar_horario_overload.sql
+supabase/migrations/018_criar_agendamento_publico_bigint.sql
+supabase/migrations/019_solicitar_horario_publico.sql
+supabase/migrations/020_fix_appointments_service_id_type.sql
+supabase/migrations/021_fix_service_id_join_and_column.sql
+supabase/migrations/022_marcar_horario_site.sql
+supabase/migrations/023_marcar_horario_sem_validar.sql
+supabase/migrations/024_diagnostico_agendamento.sql
+supabase/migrations/025_pedir_horario_sem_id.sql
+supabase/migrations/026_fix_appointment_id_bigint.sql
 ```
+
+**Site novo:** rode **001–013** e **014–026** nesta ordem (o agendamento público atual precisa da **026**). Site que já estava no ar: se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+
+Não commite `.env` nem `supabase/.temp/`.
 
 **Importante (004):** essa migration fecha o acesso anônimo direto às tabelas (`appointments`, `clients`, `profiles`, etc.) e passa o agendamento público para funções RPC. Rode o SQL **antes** (ou junto) do deploy do front. Sem a 004, a agenda pública deixa de funcionar. Com a 004 e o front antigo, também quebra — os dois precisam ir juntos.
 

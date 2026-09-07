@@ -11,6 +11,7 @@ import {
   getServiceDuration,
 } from '../utils/scheduling'
 import { toDateInputValue } from '../utils/dates'
+import { msgPedidoPublico } from '../utils/bookingMessages'
 
 export default function AgendamentoPublico() {
   const { userId } = useParams()
@@ -155,8 +156,16 @@ export default function AgendamentoPublico() {
   function abrirWhatsAppPedido() {
     const dataFinal = new Date(horaSelecionada)
     const wa = String(manicurePhone).replace(/\D/g, '')
-    const horaLabel = dataFinal.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-    const msg = `Olá, sou *${nome}*! Solicitei um horário pelo site.\n📅 *${dataFinal.toLocaleDateString('pt-BR')} às ${horaLabel}*\nCódigo: *${codigoValidacao}*`
+    const servico = servicos.find(s => s.id == servicoId)
+    const preco = servico?.default_price != null ? `R$ ${Number(servico.default_price).toFixed(2)}` : null
+    const msg = msgPedidoPublico({
+      nome,
+      negocio: businessName,
+      start: dataFinal,
+      servico: servico?.name,
+      preco,
+      codigo: codigoValidacao,
+    })
     if (wa) window.open(`https://wa.me/55${wa}?text=${encodeURIComponent(msg)}`, '_blank')
     setEtapa(3)
   }
@@ -184,8 +193,8 @@ export default function AgendamentoPublico() {
 
   if (agendaAberta === false) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: 'sans-serif' }}>
-        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', maxWidth: '400px' }}>
+      <div style={{ minHeight: '100vh', background: '#eef2f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div className="ui-card" style={{ padding: '40px', textAlign: 'center', maxWidth: '400px' }}>
           <div style={{ background: '#fee2e2', width: '80px', height: '80px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
             <Lock size={40} color="#dc2626" />
           </div>
@@ -198,18 +207,18 @@ export default function AgendamentoPublico() {
 
   if (etapa === 3) {
     return (
-      <div style={{ textAlign: 'center', padding: '50px 20px', fontFamily: 'sans-serif' }}>
+      <div className="public-book" style={{ textAlign: 'center', padding: '50px 20px' }}>
         <CheckCircle size={80} color="#16a34a" style={{ margin: '0 auto' }} />
-        <h1 style={{ color: '#16a34a' }}>Solicitação Enviada!</h1>
-        <p>Aguarde a confirmação no WhatsApp.</p>
+        <h1 style={{ color: '#16a34a' }}>Pedido enviado</h1>
+        <p style={{ color: '#64748b', maxWidth: 360, margin: '0 auto' }}>Aguarde a confirmação no WhatsApp. Até lá o horário fica como <strong>pendente</strong>.</p>
       </div>
     )
   }
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '20px', fontFamily: 'sans-serif' }}>
+    <div className="public-book">
       <Toaster position="top-center" />
-      <div style={{ maxWidth: '500px', margin: '0 auto', background: 'white', borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+      <div className="ui-card" style={{ maxWidth: '500px', margin: '0 auto', overflow: 'hidden' }}>
         <div style={{ background: '#2563eb', padding: '20px', color: 'white', textAlign: 'center' }}>
           <h2 style={{ margin: 0 }}>Agendar com {businessName}</h2>
         </div>
@@ -275,16 +284,19 @@ export default function AgendamentoPublico() {
                 )}
               </div>
             )}
-            <button type="submit" disabled={loading || !horaSelecionada} style={{ ...btn, opacity: loading || !horaSelecionada ? 0.6 : 1 }}>
+            <p style={{ color: '#64748b', fontSize: '13px', margin: 0 }}>
+              O horário só fica confirmado depois que a profissional aceitar. Até lá ele aparece como pendente.
+            </p>
+            <button type="submit" disabled={loading || !horaSelecionada} className="ui-btn ui-btn-primary" style={{ width: '100%', opacity: loading || !horaSelecionada ? 0.6 : 1 }}>
               {loading ? 'Verificando...' : 'Continuar'}
             </button>
           </form>
         ) : (
           <div style={{ padding: '30px 20px', textAlign: 'center' }}>
             <h3 style={{ color: '#b45309' }}>Quase lá!</h3>
-            <p style={{ color: '#666', marginBottom: '30px' }}>Envie o código abaixo para a manicure no WhatsApp.</p>
+            <p style={{ color: '#666', marginBottom: '16px' }}>Avise no WhatsApp com o serviço, a data e o código. O pedido fica pendente até a confirmação.</p>
             <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', letterSpacing: '5px', color: '#d97706', marginBottom: '30px' }}>{codigoValidacao}</div>
-            <button onClick={abrirWhatsAppPedido} style={{ ...btn, background: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', margin: '0 auto' }}>
+            <button onClick={abrirWhatsAppPedido} className="ui-btn" style={{ background: '#16a34a', color: 'white', width: '100%' }}>
               <Send size={20} /> Avisar no WhatsApp
             </button>
           </div>

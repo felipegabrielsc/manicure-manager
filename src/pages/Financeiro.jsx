@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Trash2, PieChart, HelpCircle, Download, Printer, Target, Package, MessageCircle } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Trash2, HelpCircle, Download, Printer, Target, Package, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import FinanceOverview from '../components/FinanceOverview'
 import { dailyCompare, sliceUntilDay, classifyNewVsReturning, topClientsByVisits, paymentMix } from '../utils/financeInsights'
 import { driver } from 'driver.js'
@@ -54,6 +53,9 @@ export default function Financeiro() {
   const [editandoMeta, setEditandoMeta] = useState(false)
   const [metaInput, setMetaInput] = useState('')
   const [overview, setOverview] = useState(null)
+  const [caixaHoje, setCaixaHoje] = useState(null)
+  const [staffList, setStaffList] = useState([])
+  const [staffFiltro, setStaffFiltro] = useState('')
 
   const mesFormatado = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dataAtual)
 
@@ -69,7 +71,7 @@ export default function Financeiro() {
       doneBtnText: 'Entendi!',
       steps: [
         { element: '#fin-nav', popover: { title: 'Navegação', description: 'Use as setas para trocar de mês.' } },
-        { element: '#fin-grafico', popover: { title: 'Gráfico', description: 'Entradas, saídas e lucro do filtro atual.' } },
+        { element: '#fin-grafico', popover: { title: 'Comparativo', description: 'Este mês contra o mês anterior, caixa do dia e KPIs.' } },
         { element: '#fin-novo', popover: { title: 'Lançamento', description: 'Despesa, receita extra ou venda de produto do estoque.' } },
         { element: '#fin-filtros', popover: { title: 'Filtros', description: 'Separe serviços, produtos, mensalidades, despesas e a forma de pagamento.' } },
       ],
@@ -142,6 +144,8 @@ export default function Financeiro() {
         origem: 'AGENDA',
         category: 'servico',
         payment_method: a.payment_method,
+        staff_id: a.staff_id || null,
+        staff_name: a.staff_members?.name || null,
       })) || []
 
     const manualFormatada = (transacoes || []).map(t => ({
@@ -214,6 +218,29 @@ export default function Financeiro() {
       porStaff[a.staff_id].comissao += valor * (pct / 100)
     })
     setComissoes(Object.values(porStaff))
+
+    const hojeIni = new Date()
+    hojeIni.setHours(0, 0, 0, 0)
+    const hojeFim = new Date()
+    hojeFim.setHours(23, 59, 59, 999)
+    const hojeDay = toDateInputValue()
+    const [{ data: aptsHoje }, { data: txHoje }, { data: equipe }] = await Promise.all([
+      supabase.from('appointments')
+        .select('agreed_price, payment_method, staff_id')
+        .gte('start_time', hojeIni.toISOString())
+        .lte('start_time', hojeFim.toISOString())
+        .eq('status', 'CONCLUIDO'),
+      supabase.from('transactions')
+        .select('amount, type')
+        .gte('date', hojeDay)
+        .lte('date', `${hojeDay}T23:59:59`),
+      supabase.from('staff_members').select('id, name').eq('active', true).order('name'),
+    ])
+    setStaffList(equipe || [])
+    setCaixaHoje({
+      rowsApts: aptsHoje || [],
+      rowsTx: txHoje || [],
+    })
 
     const y = dataAtual.getFullYear()
     const m = dataAtual.getMonth()
@@ -341,6 +368,10 @@ export default function Financeiro() {
     } else if (filtroPagamento !== 'TODOS') {
       if ((m.payment_method || '') !== filtroPagamento) return false
     }
+    if (staffFiltro) {
+      if (m.origem === 'AGENDA') return m.staff_id === staffFiltro
+      return false
+    }
     return true
   })
 
@@ -348,11 +379,15 @@ export default function Financeiro() {
   const saidasVisiveis = movimentacoesFiltradas.filter(m => m.type === 'DESPESA').reduce((acc, curr) => acc + Number(curr.amount), 0)
   const lucroVisivel = entradasVisiveis - saidasVisiveis
   const progressoMeta = metaMes > 0 ? Math.min(100, (entradasVisiveis / metaMes) * 100) : 0
-  const dadosGrafico = [
-    { name: 'Entradas', valor: entradasVisiveis, color: '#16a34a' },
-    { name: 'Saídas', valor: saidasVisiveis, color: '#dc2626' },
-    { name: 'Lucro', valor: lucroVisivel, color: '#2563eb' },
-  ]
+  const aptsCaixa = (caixaHoje?.rowsApts || []).filter(a => !staffFiltro || a.staff_id === staffFiltro)
+  const txCaixa = staffFiltro ? [] : (caixaHoje?.rowsTx || [])
+  const caixaView = caixaHoje ? {
+    entradas:
+      aptsCaixa.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE').reduce((s, a) => s + Number(a.agreed_price), 0)
+      + txCaixa.filter(t => t.type === 'RECEITA').reduce((s, t) => s + Number(t.amount), 0),
+    saidas: txCaixa.filter(t => t.type === 'DESPESA').reduce((s, t) => s + Number(t.amount), 0),
+    atendimentos: aptsCaixa.length,
+  } : null
 
   function exportarCsv() {
     exportToCsv(movimentacoesFiltradas, mesFormatado, { entradas: entradasVisiveis, saidas: saidasVisiveis, lucro: lucroVisivel })
@@ -516,7 +551,7 @@ export default function Financeiro() {
     <div style={{ paddingBottom: '50px' }}>
       <Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} type={modal.type} title={modal.title} message={modal.message} onConfirm={executarExclusao} />
 
-      <div style={{ background: 'white', padding: '15px 20px', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 4px 6px rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="ui-page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Link to="/" style={{ color: '#000' }}><ArrowLeft size={28} /></Link>
           <h2 style={{ margin: 0, fontSize: '18px', color: '#000', textTransform: 'capitalize' }}>{mesFormatado}</h2>
@@ -533,7 +568,7 @@ export default function Financeiro() {
       <div className="page-inner" style={{ padding: '20px' }}>
         {loading && <p style={{ textAlign: 'center', color: '#94a3b8' }}>Carregando...</p>}
 
-        <div id="fin-meta" style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+        <div id="fin-meta" className="ui-card" style={{ padding: '20px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Target size={16} color="#2563eb" /> Meta do mês
@@ -565,8 +600,20 @@ export default function Financeiro() {
           )}
         </div>
 
+        {staffList.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '15px', paddingBottom: '4px' }}>
+            <button type="button" onClick={() => setStaffFiltro('')} style={staffFiltro ? btnFiltroInativo : btnFiltroAtivo}>Todas</button>
+            {staffList.map(s => (
+              <button key={s.id} type="button" onClick={() => setStaffFiltro(s.id)} style={staffFiltro === s.id ? btnFiltroAtivo : btnFiltroInativo}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {overview && (
           <FinanceOverview
+            caixaHoje={caixaView}
             mesLabel={overview.mesLabel}
             mesAnteriorLabel={overview.mesAnteriorLabel}
             kpis={overview.kpis}
@@ -577,27 +624,6 @@ export default function Financeiro() {
             pagamentos={overview.pagamentos}
           />
         )}
-
-        <div id="fin-grafico" style={{ background: 'white', padding: '20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #eee' }}>
-          <h3 style={{ marginTop: 0, fontSize: '14px', color: '#666', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <PieChart size={16} /> Resumo do Mês
-          </h3>
-          <div style={{ width: '100%', height: 200 }}>
-            <ResponsiveContainer>
-              <BarChart data={dadosGrafico} margin={{ top: 5, right: 30, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} style={{ fontSize: '12px' }} />
-                <YAxis axisLine={false} tickLine={false} style={{ fontSize: '12px' }} />
-                <Tooltip cursor={{ fill: 'transparent' }} />
-                <Bar dataKey="valor" radius={[4, 4, 0, 0]} barSize={40}>
-                  {dadosGrafico.map((entry, index) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
 
         <div id="fin-cards" style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
           <div style={{ flex: '1 1 150px', background: '#dcfce7', padding: '15px', borderRadius: '12px', border: '1px solid #16a34a' }}>
@@ -759,6 +785,7 @@ export default function Financeiro() {
                   <small style={{ color: '#666' }}>
                     {formatCivilDate(m.date)}
                     {m.payment_method ? ` · ${m.payment_method}` : ''}
+                    {m.staff_name ? ` · ${m.staff_name}` : ''}
                   </small>
                 </div>
               </div>

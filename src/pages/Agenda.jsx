@@ -11,6 +11,16 @@ import { getWeekDays, fetchWeekAppointments, fetchSchedulingContext, validateBoo
 import { incrementLoyaltyVisit } from '../utils/loyalty'
 import { openSupportWhatsApp } from '../config/app'
 import { openWhatsApp } from '../utils/whatsapp'
+import {
+  nomeServico,
+  valorServico,
+  motivoVisivel,
+  msgConfirmarHorario,
+  msgRecusarHorario,
+  msgLembrete,
+  msgZapAgenda,
+  msgRecibo,
+} from '../utils/bookingMessages'
 import { useSessionProfile } from '../context/SessionProfile'
 
 export default function Agenda() {
@@ -107,11 +117,8 @@ export default function Agenda() {
     const tel = agendamento.clients?.phone?.replace(/\D/g, '')
     if (!tel) return toast.error('Cliente sem telefone')
 
-    const hora = new Date(agendamento.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-    const data = new Date(agendamento.start_time).toLocaleDateString('pt-BR')
     const link = `${window.location.origin}/resumo/${agendamento.id}`
-    const msg = `Olá ${agendamento.clients?.name}! Lembrete do seu horário: ${data} às ${hora}.\nServiço: ${agendamento.services?.name}\nDetalhes: ${link}`
-
+    const msg = msgLembrete(agendamento, link)
     window.open(`https://wa.me/${tel.startsWith('55') ? tel : `55${tel}`}?text=${encodeURIComponent(msg)}`, '_blank')
 
     await supabase.from('appointments').update({ reminder_sent_at: new Date().toISOString() }).eq('id', agendamento.id)
@@ -183,7 +190,7 @@ export default function Agenda() {
     setPagamentoModalOpen(false)
     setIdParaConcluir(null)
     if (aptDone) {
-      setAptRetorno(aptDone)
+      setAptRetorno({ ...aptDone, payment_method: metodo })
       setRetornoAberto(true)
     }
   }
@@ -354,7 +361,17 @@ export default function Agenda() {
                 <button key={d} onClick={() => marcarRetorno(d)} style={{ ...btnPagamento, flex: 1 }}> {d} dias</button>
               ))}
             </div>
-            <button onClick={() => { setRetornoAberto(false); setAptRetorno(null) }} style={{ width: '100%', padding: '12px', marginTop: '12px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Agora não</button>
+            <button
+              type="button"
+              onClick={() => {
+                const ok = openWhatsApp(aptRetorno.clients?.phone, msgRecibo(aptRetorno))
+                if (!ok) toast.error('Cliente sem WhatsApp no cadastro')
+              }}
+              style={{ width: '100%', padding: '12px', marginTop: '12px', background: '#25D366', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}
+            >
+              Enviar recibo no WhatsApp
+            </button>
+            <button onClick={() => { setRetornoAberto(false); setAptRetorno(null) }} style={{ width: '100%', padding: '12px', marginTop: '8px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Agora não</button>
           </div>
         </div>
       )}
@@ -523,7 +540,7 @@ export default function Agenda() {
                       items.map(item => (
                         <div key={item.id} onClick={() => irParaDia(dia)} style={{ padding: '10px', background: 'white', borderRadius: '8px', marginBottom: '6px', border: '1px solid #e5e7eb', cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}>
                           <span><strong>{new Date(item.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</strong> · {item.clients?.name}</span>
-                          <span style={{ fontSize: '12px', color: '#64748b' }}>{item.staff_members?.name ? `${item.staff_members.name} · ` : ''}{item.services?.name}</span>
+                          <span style={{ fontSize: '12px', color: '#64748b' }}>{item.staff_members?.name ? `${item.staff_members.name} · ` : ''}{nomeServico(item)}</span>
                         </div>
                       ))
                     )}
@@ -587,7 +604,7 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
     const { error } = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
     if (!error) {
       toast.success('Confirmado!', { icon: '✅' })
-      openWhatsApp(agendamento.clients?.phone, `Olá ${agendamento.clients?.name}, seu horário às ${hora} está confirmado!`)
+      openWhatsApp(agendamento.clients?.phone, msgConfirmarHorario(agendamento))
       onRefresh?.()
     }
   }
@@ -602,7 +619,7 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
     }).eq('id', agendamento.id)
     if (!error) {
       toast('Pedido recusado', { icon: '🗑️' })
-      openWhatsApp(agendamento.clients?.phone, `Olá ${agendamento.clients?.name}, não consegui confirmar o horário das ${hora}${motivo ? `: ${motivo}` : ''}. Podemos remarcar?`)
+      openWhatsApp(agendamento.clients?.phone, msgRecusarHorario(agendamento, motivo))
       onRefresh?.()
     }
   }
@@ -616,9 +633,7 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
     const linkCartao = `${window.location.origin}/resumo/${agendamento.id}`
 
     // 2. MONTA O TEXTO COM O LINK NO FINAL
-    const textoBase = isPendente
-      ? `Olá ${agendamento.clients?.name}, vi sua solicitação de horário para às ${hora}. Podemos confirmar?\n\nConfira os detalhes aqui: ${linkCartao}`
-      : `Olá ${agendamento.clients?.name}, passando para confirmar seu horário hoje às ${hora}.\n\nCartão de confirmação: ${linkCartao}`
+    const textoBase = msgZapAgenda(agendamento, linkCartao)
 
     window.open(`https://wa.me/${tel.startsWith('55') ? tel : `55${tel}`}?text=${encodeURIComponent(textoBase)}`, '_blank')
   }
@@ -632,7 +647,11 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
             <span style={{ background: '#f59e0b', color: 'white', fontSize: '9px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.5px' }}>SOLICITAÇÃO</span>
             <h3 style={{ margin: '4px 0 0 0', color: '#b45309', fontSize: '16px' }}>{agendamento.clients?.name}</h3>
             <span className="hora-grande" style={{ fontSize: '20px', fontWeight: 'bold', color: '#000', display: 'block', marginTop: '-2px' }}>{hora}</span>
-            <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>{agendamento.services?.name}{agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}</p>
+            <p style={{ margin: 0, fontSize: '13px', color: '#666' }}>
+              {nomeServico(agendamento)}
+              {valorServico(agendamento) ? ` · ${valorServico(agendamento)}` : ''}
+              {agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}
+            </p>
           </div>
           <button onClick={abrirWhatsapp} style={{ background: '#25D366', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <MessageCircle size={18} color="white" fill="white" />
@@ -673,16 +692,16 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
         <h3 style={{ margin: '0 0 2px 0', fontSize: '16px', textDecoration: isConcluido ? 'line-through' : 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {agendamento.clients?.name}
         </h3>
-        {isFaltou && <span style={{ fontSize: '10px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>FALTOU{agendamento.cancellation_reason ? ` · ${agendamento.cancellation_reason}` : ''}</span>}
-        {isCancelado && <span style={{ fontSize: '10px', background: '#64748b', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>CANCELADO{agendamento.cancellation_reason ? ` · ${agendamento.cancellation_reason}` : ''}</span>}
+        {isFaltou && <span style={{ fontSize: '10px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>FALTOU{motivoVisivel(agendamento.cancellation_reason) ? ` · ${motivoVisivel(agendamento.cancellation_reason)}` : ''}</span>}
+        {isCancelado && <span style={{ fontSize: '10px', background: '#64748b', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>CANCELADO{motivoVisivel(agendamento.cancellation_reason) ? ` · ${motivoVisivel(agendamento.cancellation_reason)}` : ''}</span>}
         <p style={{ margin: 0, color: '#6b7280', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {agendamento.services?.name}{agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}
+          {nomeServico(agendamento)}{agendamento.staff_members?.name ? ` · ${agendamento.staff_members.name}` : ''}
         </p>
 
         {!isPendente && (
           <div style={{ marginTop: '6px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
             <span style={{ background: isMensalista ? '#f3e8ff' : '#dcfce7', color: isMensalista ? '#581c87' : '#14532d', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold', fontSize: '11px' }}>
-              {isMensalista ? 'MENSAL' : `R$ ${agendamento.agreed_price}`}
+              {isMensalista ? 'MENSAL' : (valorServico(agendamento) || `R$ ${agendamento.agreed_price}`)}
             </span>
             {isConcluido && agendamento.payment_method && (
               <span style={{ fontSize: '10px', color: '#666', border: '1px solid #e5e7eb', padding: '2px 6px', borderRadius: '4px' }}>{agendamento.payment_method}</span>
