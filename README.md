@@ -60,9 +60,10 @@ supabase/migrations/023_marcar_horario_sem_validar.sql
 supabase/migrations/024_diagnostico_agendamento.sql
 supabase/migrations/025_pedir_horario_sem_id.sql
 supabase/migrations/026_fix_appointment_id_bigint.sql
+supabase/migrations/027_planos_preco_e_galeria.sql
 ```
 
-**Site novo:** rode **001–013** e **014–026** nesta ordem (o agendamento público atual precisa da **026**). Site que já estava no ar: se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–027** nesta ordem (o agendamento público precisa da **026**; preços e galeria, da **027**). Site que já estava no ar: se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -213,6 +214,10 @@ O e-mail de reset usa o endereço do site publicado. Sem isso, o link cai em `lo
   - `http://localhost:5173/redefinir-senha` (só para testar no computador)
 
 Peça um **novo** e-mail de recuperação depois de salvar. Links antigos continuam apontando para localhost.
+
+### Visual do e-mail
+
+O HTML do reset **não** vai no código do site. No Supabase → **Authentication** → **Email Templates** → **Reset password**, cole o arquivo `supabase/templates/recovery.html`. Deixe o assunto algo como: `Sua nova senha · Agenda Manicure`. O botão usa `{{ .ConfirmationURL }}`.
 
 ## Deploy
 

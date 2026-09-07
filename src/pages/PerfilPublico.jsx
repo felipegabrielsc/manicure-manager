@@ -7,7 +7,7 @@ export default function PerfilPublico() {
   const { userId } = useParams()
   const [loading, setLoading] = useState(true)
   const [perfil, setPerfil] = useState(null)
-  const [servicos, setServicos] = useState([])
+  const [fotos, setFotos] = useState([])
 
   useEffect(() => {
     async function load() {
@@ -21,6 +21,7 @@ export default function PerfilPublico() {
 
       setPerfil(data.profile)
       setServicos(data.services || [])
+      setFotos(data.photos || [])
       setLoading(false)
     }
     load()
@@ -65,6 +66,22 @@ export default function PerfilPublico() {
                 <Instagram size={18} /> @{perfil.instagram.replace('@', '')}
               </a>
             )}
+          </div>
+        )}
+
+        {fotos.length > 0 && (
+          <div style={{ background: 'white', borderRadius: '16px', padding: '16px', marginBottom: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
+            <h2 style={{ margin: '0 0 12px', fontSize: '18px' }}>Trabalhos</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+              {fotos.map(f => (
+                <div key={f.id} style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', aspectRatio: '1' }}>
+                  <img src={f.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <span style={{ position: 'absolute', left: 8, bottom: 8, background: 'rgba(15,23,42,0.65)', color: 'white', fontSize: 11, padding: '2px 8px', borderRadius: 8 }}>
+                    {f.kind === 'salao' ? 'Salão' : 'Unhas'}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
