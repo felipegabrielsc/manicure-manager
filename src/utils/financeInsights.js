@@ -92,6 +92,7 @@ export function labelPagamentoCurto(metodo) {
   if (metodo === 'DINHEIRO') return 'Dinheiro'
   if (metodo === 'CARTAO') return 'Cartão'
   if (metodo === 'MENSALIDADE') return 'Mensalidade'
+  if (metodo === 'PACOTE') return 'Pacote'
   if (metodo === 'OUTRO') return 'Outro'
   return metodo || 'Outro'
 }

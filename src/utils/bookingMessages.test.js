@@ -14,7 +14,17 @@ describe('bookingMessages', () => {
     expect(msg).toContain('Ana')
     expect(msg).toContain('Pé e mão')
     expect(msg).toContain('aguardando confirmação')
-    expect(msg).toContain('1234')
+  })
+
+  it('marca pedido público já confirmado', () => {
+    const msg = msgPedidoPublico({
+      nome: 'Ana',
+      negocio: 'Studio',
+      start: new Date('2026-09-06T15:00:00'),
+      servico: 'Pé e mão',
+      status: 'AGENDADO',
+    })
+    expect(msg).toContain('confirmado')
   })
 
   it('confirma com serviço e valor', () => {

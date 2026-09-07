@@ -366,6 +366,8 @@ input, select, textarea, button {
   border-color: #2563eb;
   color: #fff;
 }
+
+.ui-page-header {
   background: #fff;
   padding: 15px 20px;
   position: sticky;

@@ -92,6 +92,12 @@ export default function ClientDetailSheet({
           </section>
         )}
 
+        {Number(cliente.package_size) > 0 && (
+          <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#6b21a8', background: '#f3e8ff', padding: '8px 10px', borderRadius: 8 }}>
+            Pacote: {Number(cliente.package_used) || 0} de {cliente.package_size} visitas usadas
+          </p>
+        )}
+
         <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', margin: '16px 0 8px' }}>
           {[['TODOS', 'Tudo'], ['SERVICOS', 'Serviços'], ['COMPRAS', 'Compras']].map(([id, label]) => (
             <button key={id} type="button" onClick={() => onFiltroTipo(id)} style={chip(filtroTipo === id)}>{label}</button>

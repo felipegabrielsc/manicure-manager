@@ -34,6 +34,7 @@ export default function AgendamentoPublico() {
   const [slotsDisponiveis, setSlotsDisponiveis] = useState([])
   const [carregandoSlots, setCarregandoSlots] = useState(false)
   const [esperaEnviada, setEsperaEnviada] = useState(false)
+  const [pedidoStatus, setPedidoStatus] = useState('PENDENTE')
 
   useEffect(() => {
     async function init() {
@@ -149,6 +150,7 @@ export default function AgendamentoPublico() {
       return toast.error(result?.reason || error?.message || 'Erro ao agendar. Rode o SQL 026 no Supabase.')
     }
 
+    setPedidoStatus(result.status || 'PENDENTE')
     setLoading(false)
     setEtapa(2)
   }
@@ -165,6 +167,7 @@ export default function AgendamentoPublico() {
       servico: servico?.name,
       preco,
       codigo: codigoValidacao,
+      status: pedidoStatus,
     })
     if (wa) window.open(`https://wa.me/55${wa}?text=${encodeURIComponent(msg)}`, '_blank')
     setEtapa(3)
@@ -209,8 +212,12 @@ export default function AgendamentoPublico() {
     return (
       <div className="public-book" style={{ textAlign: 'center', padding: '50px 20px' }}>
         <CheckCircle size={80} color="#16a34a" style={{ margin: '0 auto' }} />
-        <h1 style={{ color: '#16a34a' }}>Pedido enviado</h1>
-        <p style={{ color: '#64748b', maxWidth: 360, margin: '0 auto' }}>Aguarde a confirmação no WhatsApp. Até lá o horário fica como <strong>pendente</strong>.</p>
+        <h1 style={{ color: '#16a34a' }}>{pedidoStatus === 'AGENDADO' ? 'Horário confirmado' : 'Pedido enviado'}</h1>
+        <p style={{ color: '#64748b', maxWidth: 360, margin: '0 auto' }}>
+          {pedidoStatus === 'AGENDADO'
+            ? 'Seu horário já está confirmado. Se quiser, avise a profissional no WhatsApp.'
+            : <>Aguarde a confirmação no WhatsApp. Até lá o horário fica como <strong>pendente</strong>.</>}
+        </p>
       </div>
     )
   }

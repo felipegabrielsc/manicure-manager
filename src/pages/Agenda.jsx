@@ -20,7 +20,9 @@ import {
   msgLembrete,
   msgZapAgenda,
   msgRecibo,
+  msgRetornoLembrete,
 } from '../utils/bookingMessages'
+import { toDateInputValue } from '../utils/dates'
 import { useSessionProfile } from '../context/SessionProfile'
 
 export default function Agenda() {
@@ -48,6 +50,7 @@ export default function Agenda() {
   const [motivoTipo, setMotivoTipo] = useState('FALTOU')
   const [motivoTexto, setMotivoTexto] = useState('')
   const [espera, setEspera] = useState([])
+  const [retornos, setRetornos] = useState([])
 
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
   const [acaoConfirmacao, setAcaoConfirmacao] = useState(null)
@@ -59,7 +62,7 @@ export default function Agenda() {
   // Busca agendamentos quando muda a data
   useEffect(() => { buscarAgendamentos() }, [dataAtual])
   useEffect(() => { carregarSemana() }, [dataAtual])
-  useEffect(() => { carregarLembretes(); carregarEspera() }, [])
+  useEffect(() => { carregarLembretes(); carregarEspera(); carregarRetornos() }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -102,6 +105,12 @@ export default function Agenda() {
   async function carregarEspera() {
     const { data, error } = await supabase.from('waitlist').select('*, services(name)').eq('status', 'ABERTA').order('created_at', { ascending: true })
     if (!error) setEspera(data || [])
+  }
+
+  async function carregarRetornos() {
+    const hoje = toDateInputValue()
+    const { data } = await supabase.from('followup_reminders').select('*').is('sent_at', null).lte('remind_on', hoje).order('remind_on')
+    setRetornos(data || [])
   }
 
   async function avisarEspera(item) {
@@ -171,6 +180,16 @@ export default function Agenda() {
   }
 
   const confirmarPagamento = async (metodo) => {
+    if (metodo === 'PACOTE') {
+      const apt = agendamentos.find(a => a.id === idParaConcluir)
+      if (!apt?.client_id) return toast.error('Cliente não encontrada')
+      const { data: cli } = await supabase.from('clients').select('package_size, package_used').eq('id', apt.client_id).single()
+      const size = Number(cli?.package_size) || 0
+      const used = Number(cli?.package_used) || 0
+      if (size < 1 || used >= size) return toast.error('Essa cliente não tem visita no pacote. Cadastre 4 ou 6 no perfil dela.')
+      const { error: pkgErr } = await supabase.from('clients').update({ package_used: used + 1 }).eq('id', apt.client_id)
+      if (pkgErr) return toast.error(pkgErr.message.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote).' : pkgErr.message)
+    }
     await toggleStatus(idParaConcluir, 'AGENDADO', metodo)
     if (metodo === 'MENSALIDADE') {
       const apt = agendamentos.find(a => a.id === idParaConcluir)
@@ -303,6 +322,24 @@ export default function Agenda() {
     setAptRetorno(null)
   }
 
+  async function lembrarRetornoZap() {
+    if (!aptRetorno || !userId) return
+    const d = new Date()
+    d.setDate(d.getDate() + 15)
+    const { error } = await supabase.from('followup_reminders').insert({
+      user_id: userId,
+      client_id: aptRetorno.client_id,
+      phone: aptRetorno.clients?.phone || null,
+      client_name: aptRetorno.clients?.name || null,
+      remind_on: toDateInputValue(d),
+    })
+    if (error) return toast.error(error.message.includes('followup') ? 'Rode o SQL 028 no Supabase (retorno).' : error.message)
+    toast.success('Vou te lembrar daqui a 15 dias para mandar o Zap')
+    setRetornoAberto(false)
+    setAptRetorno(null)
+    carregarRetornos()
+  }
+
   const mudarDia = (d) => { const n = new Date(dataAtual); n.setDate(n.getDate() + d); setDataAtual(n) }
   const mudarSemana = (d) => { const n = new Date(dataAtual); n.setDate(n.getDate() + d * 7); setDataAtual(n) }
   const irParaDia = (dia) => { setDataAtual(new Date(dia)); setModoSemana(false) }
@@ -345,6 +382,7 @@ export default function Agenda() {
               <button onClick={() => confirmarPagamento('DINHEIRO')} style={btnPagamento}>💵 Dinheiro</button>
               <button onClick={() => confirmarPagamento('CARTAO')} style={btnPagamento}>💳 Cartão</button>
               <button onClick={() => confirmarPagamento('MENSALIDADE')} style={{ ...btnPagamento, background: '#fee2e2', color: '#dc2626' }}>Mensalidade (cobra no vencimento)</button>
+              <button onClick={() => confirmarPagamento('PACOTE')} style={{ ...btnPagamento, gridColumn: '1 / -1', background: '#f3e8ff', color: '#6b21a8' }}>Pacote (4 ou 6 visitas)</button>
             </div>
             <button onClick={() => setPagamentoModalOpen(false)} style={{ width: '100%', padding: '15px', marginTop: '15px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Cancelar</button>
           </div>
@@ -361,6 +399,9 @@ export default function Agenda() {
                 <button key={d} onClick={() => marcarRetorno(d)} style={{ ...btnPagamento, flex: 1 }}> {d} dias</button>
               ))}
             </div>
+            <button type="button" onClick={lembrarRetornoZap} style={{ width: '100%', padding: '12px', marginTop: '10px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}>
+              Só lembrar no Zap daqui a 15 dias
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -504,6 +545,31 @@ export default function Agenda() {
               <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #fde68a', fontSize: '13px' }}>
                 <span>{l.clients?.name} · {new Date(l.start_time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                 <button onClick={() => enviarLembrete(l)} style={{ background: '#25D366', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>WhatsApp</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {retornos.length > 0 && (
+        <div className="page-inner" style={{ padding: '12px 15px' }}>
+          <div style={{ background: '#fdf2f8', border: '1px solid #f9a8d4', borderRadius: '12px', padding: '12px' }}>
+            <div style={{ fontWeight: 'bold', color: '#9d174d', marginBottom: '8px' }}>Retorno de unhas ({retornos.length})</div>
+            {retornos.slice(0, 5).map(item => (
+              <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: '13px', borderTop: '1px solid #fbcfe8' }}>
+                <span>{item.client_name || 'Cliente'}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = openWhatsApp(item.phone, msgRetornoLembrete(item.client_name || ''))
+                    if (!ok) return toast.error('Sem WhatsApp neste lembrete')
+                    await supabase.from('followup_reminders').update({ sent_at: new Date().toISOString() }).eq('id', item.id)
+                    carregarRetornos()
+                  }}
+                  style={{ background: '#25D366', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  WhatsApp
+                </button>
               </div>
             ))}
           </div>

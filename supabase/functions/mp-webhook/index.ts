@@ -79,7 +79,12 @@ Deno.serve(async (req) => {
     }
 
     const expires = new Date()
-    expires.setDate(expires.getDate() + 31)
+    let days = 31
+    if (planId) {
+      const { data: plan } = await admin.from('subscription_plans').select('interval_type').eq('id', planId).maybeSingle()
+      if (plan?.interval_type === 'yearly' || plan?.interval_type === 'year') days = 365
+    }
+    expires.setDate(expires.getDate() + days)
 
     const { error: updErr } = await admin.from('profiles').update({
       plan_id: planId || null,

@@ -7,6 +7,7 @@ export default function PerfilPublico() {
   const { userId } = useParams()
   const [loading, setLoading] = useState(true)
   const [perfil, setPerfil] = useState(null)
+  const [servicos, setServicos] = useState([])
   const [fotos, setFotos] = useState([])
 
   useEffect(() => {
@@ -44,9 +45,12 @@ export default function PerfilPublico() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #eff6ff 0%, #f8fafc 40%)', fontFamily: 'sans-serif', paddingBottom: '40px' }}>
-      <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '40px 20px 60px', textAlign: 'center', color: 'white' }}>
-        <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Scissors size={36} />
+      <div style={{
+        background: perfil.cover_url ? `linear-gradient(180deg, rgba(37,99,235,0.55), rgba(124,58,237,0.75)), url(${perfil.cover_url}) center/cover` : 'linear-gradient(135deg, #2563eb, #7c3aed)',
+        padding: '40px 20px 60px', textAlign: 'center', color: 'white',
+      }}>
+        <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', border: '3px solid rgba(255,255,255,0.5)' }}>
+          {perfil.logo_url ? <img src={perfil.logo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Scissors size={36} />}
         </div>
         <h1 style={{ margin: '0 0 8px', fontSize: '28px' }}>{nome}</h1>
         {perfil.bio && <p style={{ margin: 0, opacity: 0.9, fontSize: '15px', maxWidth: '400px', marginInline: 'auto' }}>{perfil.bio}</p>}
@@ -74,10 +78,19 @@ export default function PerfilPublico() {
             <h2 style={{ margin: '0 0 12px', fontSize: '18px' }}>Trabalhos</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
               {fotos.map(f => (
-                <div key={f.id} style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', aspectRatio: '1' }}>
-                  <img src={f.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div key={f.id} style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden' }}>
+                  {f.kind === 'antes_depois' && f.extra_url ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', aspectRatio: '2 / 1' }}>
+                      <img src={f.extra_url} alt="Antes" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={f.url} alt="Depois" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  ) : (
+                    <div style={{ aspectRatio: '1' }}>
+                      <img src={f.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
                   <span style={{ position: 'absolute', left: 8, bottom: 8, background: 'rgba(15,23,42,0.65)', color: 'white', fontSize: 11, padding: '2px 8px', borderRadius: 8 }}>
-                    {f.kind === 'salao' ? 'Salão' : 'Unhas'}
+                    {f.kind === 'salao' ? 'Salão' : f.kind === 'antes_depois' ? 'Antes / depois' : 'Unhas'}
                   </span>
                 </div>
               ))}
