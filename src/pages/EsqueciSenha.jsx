@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { Mail, ArrowLeft, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { publicAppUrl } from '../config/app'
 
 export default function EsqueciSenha() {
   const [email, setEmail] = useState('')
@@ -14,7 +15,7 @@ export default function EsqueciSenha() {
     setLoading(true)
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/redefinir-senha`,
+      redirectTo: `${publicAppUrl()}/redefinir-senha`,
     })
 
     setLoading(false)

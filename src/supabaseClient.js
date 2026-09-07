@@ -7,4 +7,10 @@ if (!supabaseUrl || !supabaseKey) {
   console.error('Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env')
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    detectSessionInUrl: true,
+    persistSession: true,
+    flowType: 'pkce',
+  },
+})
