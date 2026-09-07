@@ -135,7 +135,7 @@ export default function Financeiro() {
       .map(t => t.client_id) || []
 
     const agendaFormatada = agendamentos
-      ?.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE')
+      ?.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE' && a.payment_method !== 'PACOTE')
       .map(a => ({
         id: `agenda-${a.id}`,
         description: `${a.clients?.name} - ${a.services?.name}`,
@@ -208,7 +208,7 @@ export default function Financeiro() {
 
     const porStaff = {}
     ;(agendamentos || []).forEach(a => {
-      if (!a.staff_id || a.payment_method === 'MENSALIDADE') return
+      if (!a.staff_id || a.payment_method === 'MENSALIDADE' || a.payment_method === 'PACOTE') return
       const pct = Number(a.staff_members?.commission_percent) || 0
       if (pct <= 0) return
       if (!porStaff[a.staff_id]) {
@@ -249,7 +249,7 @@ export default function Financeiro() {
     const mesAntNome = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(prevDate)
 
     const prevAgendaFmt = (prevAgendamentos || [])
-      .filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE')
+      .filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE' && a.payment_method !== 'PACOTE')
       .map(a => ({ date: a.start_time, amount: Number(a.agreed_price), type: 'RECEITA', payment_method: a.payment_method }))
     const prevManualFmt = (prevTransacoes || []).map(t => ({
       date: t.date,
@@ -384,7 +384,7 @@ export default function Financeiro() {
   const txCaixa = staffFiltro ? [] : (caixaHoje?.rowsTx || [])
   const caixaView = caixaHoje ? {
     entradas:
-      aptsCaixa.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE').reduce((s, a) => s + Number(a.agreed_price), 0)
+      aptsCaixa.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE' && a.payment_method !== 'PACOTE').reduce((s, a) => s + Number(a.agreed_price), 0)
       + txCaixa.filter(t => t.type === 'RECEITA').reduce((s, t) => s + Number(t.amount), 0),
     saidas: txCaixa.filter(t => t.type === 'DESPESA').reduce((s, t) => s + Number(t.amount), 0),
     atendimentos: aptsCaixa.length,

@@ -30,6 +30,10 @@ export default function Configuracoes() {
   const [horasLembrete, setHorasLembrete] = useState(24)
   const [pushAtivo, setPushAtivo] = useState(false)
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(null)
+  const [coverUrl, setCoverUrl] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [autoConfirm, setAutoConfirm] = useState(false)
+  const [reviewFirst, setReviewFirst] = useState(true)
   const [horarios, setHorarios] = useState([])
   const [bloqueios, setBloqueios] = useState([])
   const [bloqueioData, setBloqueioData] = useState('')
@@ -71,6 +75,10 @@ export default function Configuracoes() {
         setHorasLembrete(perfil.reminder_hours_before ?? 24)
         setPushAtivo(perfil.push_enabled === true)
         setAgendamentoAtivo(perfil.booking_active === false ? false : true)
+        setCoverUrl(perfil.cover_url || '')
+        setLogoUrl(perfil.logo_url || '')
+        setAutoConfirm(perfil.auto_confirm_public === true)
+        setReviewFirst(perfil.review_first_visit !== false)
     } else {
         await supabase.from('profiles').insert({ id: user.id, booking_active: true })
         setAgendamentoAtivo(true)
@@ -147,6 +155,10 @@ export default function Configuracoes() {
         reminders_enabled: lembretesAtivos,
         reminder_hours_before: parseInt(horasLembrete, 10) || 24,
         booking_active: agendamentoAtivo,
+        cover_url: coverUrl || null,
+        logo_url: logoUrl || null,
+        auto_confirm_public: autoConfirm,
+        review_first_visit: reviewFirst,
     })
     const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed, user_id }) => ({
       day_of_week,
@@ -158,7 +170,10 @@ export default function Configuracoes() {
       user_id,
     }))
     const { error: errHorario } = await supabase.from('business_hours').upsert(dadosHorarios, { onConflict: 'user_id, day_of_week' })
-    if (errPerfil || errHorario) toast.error('Erro ao salvar')
+    if (errPerfil || errHorario) {
+      const m = errPerfil?.message || errHorario?.message || ''
+      toast.error(/cover_url|logo_url|auto_confirm|review_first/i.test(m) ? 'Rode o SQL 028 no Supabase (perfil e confirmação).' : 'Erro ao salvar')
+    }
     else toast.success('Dados atualizados!')
   }
 
@@ -297,9 +312,29 @@ export default function Configuracoes() {
                 <input type="checkbox" checked={perfilPublicoAtivo} onChange={e => setPerfilPublicoAtivo(e.target.checked)} />
                 Perfil público visível
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', marginTop: 10 }}>
+                <input type="checkbox" checked={autoConfirm} onChange={e => setAutoConfirm(e.target.checked)} />
+                Confirmar sozinho o pedido do site
+            </label>
+            {autoConfirm && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', marginTop: 8, color: '#475569' }}>
+                <input type="checkbox" checked={reviewFirst} onChange={e => setReviewFirst(e.target.checked)} />
+                Revisar só a primeira visita dessa cliente
+              </label>
+            )}
         </div>
 
-        {userId && <PortfolioEditor userId={userId} />}
+        {userId && (
+          <PortfolioEditor
+            userId={userId}
+            coverUrl={coverUrl}
+            logoUrl={logoUrl}
+            onBrandChange={(campo, url) => {
+              if (campo === 'cover_url') setCoverUrl(url)
+              else setLogoUrl(url)
+            }}
+          />
+        )}
 
         {/* LEMBRETES */}
         <div id="card-lembretes" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>

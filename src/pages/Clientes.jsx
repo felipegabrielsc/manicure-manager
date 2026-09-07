@@ -29,6 +29,7 @@ export default function Clientes() {
   const [mensalidadeValor, setMensalidadeValor] = useState('')
   const [diaVencimento, setDiaVencimento] = useState('10')
   const [offsetVencimento, setOffsetVencimento] = useState('1')
+  const [packageSize, setPackageSize] = useState(0)
 
   // Estados para Modal de Histórico
   const [clienteDetalheId, setClienteDetalheId] = useState(null)
@@ -164,6 +165,8 @@ export default function Clientes() {
       dados.monthly_due_day = Math.min(31, Math.max(1, parseInt(diaVencimento, 10) || 10))
       dados.monthly_due_offset = offsetVencimento === '0' ? 0 : 1
     }
+    dados.package_size = Number(packageSize) || 0
+    if (!idEdicao) dados.package_used = 0
 
     let error
     if (idEdicao) {
@@ -174,7 +177,10 @@ export default function Clientes() {
         error = res.error
     }
 
-    if (error) toast.error(error.message?.includes('monthly_') ? 'Rode o SQL 007 no Supabase (vencimento da mensalidade).' : (error.message || 'Erro ao salvar'))
+    if (error) {
+      const m = error.message || ''
+      toast.error(m.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote de visitas).' : m.includes('monthly_') ? 'Rode o SQL 007 no Supabase (vencimento da mensalidade).' : (m || 'Erro ao salvar'))
+    }
     else {
         toast.success('Cliente salva!')
         setModalAberto(false)
@@ -226,6 +232,7 @@ export default function Clientes() {
       setMensalidadeValor(c.monthly_fee != null ? String(c.monthly_fee) : '')
       setDiaVencimento(String(c.monthly_due_day || 10))
       setOffsetVencimento(c.monthly_due_offset == null ? '1' : String(c.monthly_due_offset))
+      setPackageSize(Number(c.package_size) || 0)
       setModalAberto(true)
   }
 
@@ -237,6 +244,7 @@ export default function Clientes() {
     setMensalidadeValor('')
     setDiaVencimento('10')
     setOffsetVencimento('1')
+    setPackageSize(0)
   }
 
   const itensFiltradosDe = (historico) => (historico || []).filter(item => passaFiltroItem(item, filtroTipo, filtroPagamento))
@@ -375,6 +383,11 @@ export default function Clientes() {
                                     Mensalidade · vence dia {cliente.monthly_due_day || 10}{Number(cliente.monthly_due_offset) === 0 ? ' no mesmo mês' : ' no mês seguinte'}
                                   </span>
                                 )}
+                                {(Number(cliente.package_size) > 0) && (
+                                  <span style={{ display: 'block', fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>
+                                    Pacote {Number(cliente.package_used) || 0}/{cliente.package_size}
+                                  </span>
+                                )}
                                 {(cliente.loyalty_visits > 0) && (
                                   <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>★ {cliente.loyalty_visits} visitas</span>
                                 )}
@@ -462,7 +475,17 @@ export default function Clientes() {
                          </div>
                        </>
                      )}
-                     {tipoCliente !== 'MENSALISTA' && <div style={{marginBottom:'20px'}} />}
+                     <div style={{ marginBottom: '15px' }}>
+                       <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>Pacote de visitas</label>
+                       <div style={{ display: 'flex', gap: '8px' }}>
+                         {[0, 4, 6].map(n => (
+                           <button type="button" key={n} onClick={() => setPackageSize(n)} style={packageSize === n ? btnChipOn : btnChipOff}>
+                             {n === 0 ? 'Sem pacote' : `${n} visitas`}
+                           </button>
+                         ))}
+                       </div>
+                     </div>
+                     {tipoCliente !== 'MENSALISTA' && <div style={{marginBottom:'8px'}} />}
                      <button type="submit" style={btnStyle}>Salvar</button>
                  </form>
              </div>

@@ -61,9 +61,10 @@ supabase/migrations/024_diagnostico_agendamento.sql
 supabase/migrations/025_pedir_horario_sem_id.sql
 supabase/migrations/026_fix_appointment_id_bigint.sql
 supabase/migrations/027_planos_preco_e_galeria.sql
+supabase/migrations/028_perfil_planos_pacote_retorno.sql
 ```
 
-**Site novo:** rode **001–027** nesta ordem (o agendamento público precisa da **026**; preços e galeria, da **027**). Site que já estava no ar: se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–028** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 

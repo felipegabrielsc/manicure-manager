@@ -25,7 +25,7 @@ function quando(start) {
   return { data, hora }
 }
 
-export function msgPedidoPublico({ nome, negocio, start, servico, preco, codigo }) {
+export function msgPedidoPublico({ nome, negocio, start, servico, preco, codigo, status }) {
   const { data, hora } = quando(start)
   const linhas = [
     `Olá, sou *${nome}*!`,
@@ -33,7 +33,7 @@ export function msgPedidoPublico({ nome, negocio, start, servico, preco, codigo 
     `📅 *${data} às ${hora}*`,
     servico ? `💅 *${servico}*` : null,
     preco ? `💰 ${preco}` : null,
-    'Status: *aguardando confirmação*.',
+    'Status: *' + (status === 'AGENDADO' ? 'confirmado' : 'aguardando confirmação') + '*.',
     codigo ? `Código: *${codigo}*` : null,
   ]
   return linhas.filter(Boolean).join('\n')
@@ -80,13 +80,20 @@ export function msgZapAgenda(apt, link) {
 
 export function msgRecibo(apt) {
   const { data, hora } = quando(apt.start_time)
-  const metodo = apt.payment_method && apt.payment_method !== 'MENSALIDADE' ? apt.payment_method : null
+  const metodo = apt.payment_method
+  const pagamento = metodo === 'MENSALIDADE' ? 'Pagamento: mensalidade'
+    : metodo === 'PACOTE' ? 'Pagamento: pacote'
+    : metodo ? `Pagamento: ${metodo}` : null
   return [
     `Recibo · ${apt.clients?.name}`,
     `📅 ${data} às ${hora}`,
     `💅 ${nomeServico(apt)}`,
-    valorServico(apt) ? `💰 ${valorServico(apt)}` : null,
-    metodo ? `Pagamento: ${metodo}` : apt.payment_method === 'MENSALIDADE' ? 'Pagamento: mensalidade' : null,
+    valorServico(apt) && metodo !== 'PACOTE' ? `💰 ${valorServico(apt)}` : null,
+    pagamento,
     'Obrigada!',
   ].filter(Boolean).join('\n')
+}
+
+export function msgRetornoLembrete(nome) {
+  return `Oi ${nome}! Passando para lembrar do retorno das unhas daqui a uns 15 dias. Quando quiser, é só marcar pelo link ou me chamar aqui 💜`
 }

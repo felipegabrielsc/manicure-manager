@@ -153,5 +153,27 @@ Deno.serve(async (req) => {
     monthlySent += 1
   }
 
-  return json({ ok: true, pendingSent, reminderSent, monthlySent })
+  let followupSent = 0
+  const { data: retornos } = await admin
+    .from('followup_reminders')
+    .select('id, user_id')
+    .is('sent_at', null)
+    .lte('remind_on', todayIso)
+
+  const followByOwner = new Map<string, number>()
+  for (const row of retornos || []) {
+    followByOwner.set(row.user_id, (followByOwner.get(row.user_id) || 0) + 1)
+  }
+  for (const [ownerId, qtd] of followByOwner) {
+    const { data: perfil } = await admin.from('profiles').select('push_enabled').eq('id', ownerId).single()
+    if (!perfil?.push_enabled) continue
+    await sendToUser(admin, ownerId, {
+      title: 'Retorno de unhas',
+      body: qtd === 1 ? 'Tem 1 cliente para lembrar do retorno hoje.' : `Tem ${qtd} clientes para lembrar do retorno hoje.`,
+      url: '/',
+    })
+    followupSent += 1
+  }
+
+  return json({ ok: true, pendingSent, reminderSent, monthlySent, followupSent })
 })
