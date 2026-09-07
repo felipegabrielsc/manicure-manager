@@ -114,12 +114,19 @@ export default function Planos() {
           {plans.map(plan => {
             const isCurrent = profile?.plan_id === plan.id && usable
             const features = Array.isArray(plan.features) ? plan.features : []
+            const isPro = String(plan.name).toLowerCase() === 'pro'
             return (
               <div key={plan.id} style={{
                 background: 'white', padding: '24px', borderRadius: '16px',
-                border: isCurrent ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                boxShadow: isCurrent ? '0 4px 20px rgba(37,99,235,0.15)' : 'none',
+                border: isPro ? '2px solid #2563eb' : (isCurrent ? '2px solid #2563eb' : '1px solid #e2e8f0'),
+                boxShadow: isPro ? '0 8px 24px rgba(37,99,235,0.18)' : (isCurrent ? '0 4px 20px rgba(37,99,235,0.15)' : 'none'),
+                position: 'relative',
               }}>
+                {isPro && (
+                  <span style={{ position: 'absolute', top: 12, right: 12, background: '#2563eb', color: 'white', fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 999 }}>
+                    Recomendado
+                  </span>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                   <div>
                     <h4 style={{ margin: '0 0 4px', fontSize: '20px' }}>{plan.name}</h4>
@@ -128,6 +135,7 @@ export default function Planos() {
                   <div style={{ textAlign: 'right' }}>
                     <strong style={{ fontSize: '28px', color: '#2563eb' }}>R$ {Number(plan.price).toFixed(0)}</strong>
                     <span style={{ display: 'block', fontSize: '12px', color: '#94a3b8' }}>/mês</span>
+                    {isPro && <span style={{ display: 'block', fontSize: '11px', color: '#16a34a', fontWeight: 700, marginTop: 4 }}>só R$ 25 a mais</span>}
                   </div>
                 </div>
                 <ul style={{ margin: '0 0 16px', padding: '0 0 0 20px', fontSize: '14px', color: '#475569' }}>

@@ -27,11 +27,11 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
 );
 
 INSERT INTO subscription_plans (name, description, price, checkout_url, features, sort_order)
-SELECT 'Básico', 'Agenda, clientes e financeiro', 49.90, NULL, '["Agenda","Clientes","Financeiro"]', 1
+SELECT 'Básico', 'Agenda, clientes e financeiro', 125, NULL, '["Agenda","Clientes","Financeiro"]', 1
 WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Básico');
 
 INSERT INTO subscription_plans (name, description, price, checkout_url, features, sort_order)
-SELECT 'Pro', 'Tudo do Básico + fidelidade, estoque e equipe', 79.90, NULL, '["Agenda","Clientes","Financeiro","Fidelidade","Estoque","Equipe"]', 2
+SELECT 'Pro', 'Tudo do Básico + fidelidade, estoque e equipe', 150, NULL, '["Agenda","Clientes","Financeiro","Fidelidade","Estoque","Equipe"]', 2
 WHERE NOT EXISTS (SELECT 1 FROM subscription_plans WHERE name = 'Pro');
 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS plan_id uuid REFERENCES subscription_plans(id);

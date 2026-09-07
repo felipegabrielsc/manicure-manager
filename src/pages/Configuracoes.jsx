@@ -6,6 +6,7 @@ import { subscribeToPush, unsubscribePush, getPushCapabilities } from '../utils/
 import { toTimeInput } from '../utils/dates'
 import { exportClientsCsv } from '../utils/exportReport'
 import UnlockAdminForm from '../components/UnlockAdminForm'
+import PortfolioEditor from '../components/PortfolioEditor'
 import { useSessionProfile } from '../context/SessionProfile'
 import { isSiteOwnerId } from '../utils/siteOwner'
 import { Link } from 'react-router-dom'
@@ -297,6 +298,8 @@ export default function Configuracoes() {
                 Perfil público visível
             </label>
         </div>
+
+        {userId && <PortfolioEditor userId={userId} />}
 
         {/* LEMBRETES */}
         <div id="card-lembretes" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
