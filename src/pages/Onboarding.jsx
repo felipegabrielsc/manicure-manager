@@ -17,13 +17,27 @@ export default function Onboarding() {
   const [fecha, setFecha] = useState('18:00')
   const [servico, setServico] = useState('Pé e mão')
   const [preco, setPreco] = useState('50')
+  const [linkPublico, setLinkPublico] = useState('')
+
+  async function copiarLink() {
+    if (!linkPublico) return
+    try {
+      await navigator.clipboard.writeText(linkPublico)
+      toast.success('Link copiado')
+    } catch {
+      toast.error('Não deu para copiar. Selecione o texto.')
+    }
+  }
 
   async function concluir() {
     if (!nome.trim()) return toast.error('Informe o nome do salão')
     if (whatsapp.replace(/\D/g, '').length < 10) return toast.error('Informe o WhatsApp')
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) {
+      setSaving(false)
+      return toast.error('Sessão expirada')
+    }
 
     await supabase.from('profiles').update({
       business_name: nome.trim(),
@@ -58,8 +72,8 @@ export default function Onboarding() {
 
     await refreshProfile()
     setSaving(false)
-    toast.success('Pronto! Sua agenda já pode ser usada.')
-    navigate('/')
+    setLinkPublico(`${window.location.origin}/agendar/${user.id}`)
+    toast.success('Pronto! Copie o link da sua agenda.')
   }
 
   const passos = [
@@ -102,9 +116,28 @@ export default function Onboarding() {
 
   const atual = passos[step]
 
+  if (linkPublico) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#eef2f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div className="ui-card" style={{ padding: '28px', width: '100%', maxWidth: '420px' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>ÚLTIMO PASSO</p>
+          <h2 style={{ marginTop: '8px' }}>Seu link de agendamento</h2>
+          <p style={{ color: '#64748b', fontSize: '14px', lineHeight: 1.5 }}>
+            Envie este link no WhatsApp, Instagram ou bio. A cliente escolhe o horário e você só confirma.
+          </p>
+          <input readOnly value={linkPublico} style={{ ...inp, background: '#f8fafc' }} onFocus={e => e.target.select()} />
+          <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+            <button type="button" className="ui-btn ui-btn-ghost" style={{ flex: 1 }} onClick={copiarLink}>Copiar link</button>
+            <button type="button" className="ui-btn ui-btn-primary" style={{ flex: 1 }} onClick={() => navigate('/')}>Ir para a agenda</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#eef2f6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-      <div style={{ background: 'white', padding: '28px', borderRadius: '16px', width: '100%', maxWidth: '420px', boxShadow: '0 8px 30px rgba(0,0,0,0.08)' }}>
+      <div className="ui-card" style={{ padding: '28px', width: '100%', maxWidth: '420px' }}>
         <p style={{ margin: 0, fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>PASSO {step + 1} DE {passos.length}</p>
         <h2 style={{ marginTop: '8px' }}>{atual.title}</h2>
         {atual.body}
