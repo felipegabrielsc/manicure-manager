@@ -338,7 +338,34 @@ input, select, textarea, button {
   border: 1px solid var(--accent);
 }
 
-.ui-page-header {
+.fin-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.fin-tabs button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fin-tabs button.is-on {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
   background: #fff;
   padding: 15px 20px;
   position: sticky;

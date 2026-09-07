@@ -7,7 +7,6 @@ import { trendPct, labelPagamentoCurto } from '../utils/financeInsights'
 const COLORS = ['#2563eb', '#16a34a', '#db2777', '#f59e0b', '#0f766e', '#64748b']
 
 export default function FinanceOverview({
-  caixaHoje,
   mesLabel,
   mesAnteriorLabel,
   kpis,
@@ -34,29 +33,6 @@ export default function FinanceOverview({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '22px' }}>
-      {caixaHoje && (
-        <section className="ui-card" style={{ padding: 16 }}>
-          <h3 style={title}>Caixa de hoje</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-            <div>
-              <div style={muted}>Entradas</div>
-              <div style={{ ...big, fontSize: 18, color: '#166534' }}>R$ {money(caixaHoje.entradas)}</div>
-            </div>
-            <div>
-              <div style={muted}>Saídas</div>
-              <div style={{ ...big, fontSize: 18, color: '#991b1b' }}>R$ {money(caixaHoje.saidas)}</div>
-            </div>
-            <div>
-              <div style={muted}>Atendimentos</div>
-              <div style={{ ...big, fontSize: 18 }}>{caixaHoje.atendimentos}</div>
-            </div>
-          </div>
-          <p style={{ margin: '10px 0 0', fontSize: 12, color: '#64748b' }}>
-            Saldo do dia: R$ {money((caixaHoje.entradas || 0) - (caixaHoje.saidas || 0))}
-          </p>
-        </section>
-      )}
-
       <section id="fin-grafico" className="ui-card" style={{ padding: 16 }}>
         <h3 style={title}>Comparativo · {mesLabel} vs {mesAnteriorLabel}</h3>
         <div style={{ width: '100%', height: 180 }}>

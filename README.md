@@ -29,6 +29,7 @@ cp .env.example .env
 | `VITE_SUPABASE_ANON_KEY` | Chave anon/public |
 | `VITE_MERCADOPAGO_CHECKOUT_URL` | Link de checkout Mercado Pago (planos) |
 | `VITE_VAPID_PUBLIC_KEY` | Chave pública VAPID para push (opcional) |
+| `VITE_PUBLIC_APP_URL` | URL pública do site (reset de senha; ex. `https://manicure-manager-ebon.vercel.app`) |
 
 4. Execute as migrations SQL no Supabase (SQL Editor), **nesta ordem**:
 
@@ -200,10 +201,18 @@ Rode `010_admin_unlock_code.sql` e `011_admin_unlock_bypass.sql` antes. O padrã
 
 ## Recuperação de senha
 
-Supabase → Authentication → URL Configuration:
+O e-mail de reset usa o endereço do site publicado. Sem isso, o link cai em `localhost`.
 
-- **Site URL:** `http://localhost:5173`
-- **Redirect URLs:** `/redefinir-senha`
+1. Vercel: defina `VITE_PUBLIC_APP_URL=https://manicure-manager-ebon.vercel.app` (ou o domínio real) e faça redeploy.
+2. Supabase → Authentication → URL Configuration:
+
+- **Site URL:** `https://manicure-manager-ebon.vercel.app` (não use localhost)
+- **Redirect URLs:**
+  - `https://manicure-manager-ebon.vercel.app/redefinir-senha`
+  - `https://manicure-manager-ebon.vercel.app/**`
+  - `http://localhost:5173/redefinir-senha` (só para testar no computador)
+
+Peça um **novo** e-mail de recuperação depois de salvar. Links antigos continuam apontando para localhost.
 
 ## Deploy
 

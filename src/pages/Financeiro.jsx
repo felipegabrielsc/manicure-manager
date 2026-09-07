@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
-import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Trash2, HelpCircle, Download, Printer, Target, Package, MessageCircle } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Trash2, HelpCircle, Download, Printer, Target, Package, MessageCircle, BarChart3, Wallet } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import FinanceOverview from '../components/FinanceOverview'
@@ -56,6 +56,7 @@ export default function Financeiro() {
   const [caixaHoje, setCaixaHoje] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [staffFiltro, setStaffFiltro] = useState('')
+  const [aba, setAba] = useState('caixa')
 
   const mesFormatado = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dataAtual)
 
@@ -71,7 +72,7 @@ export default function Financeiro() {
       doneBtnText: 'Entendi!',
       steps: [
         { element: '#fin-nav', popover: { title: 'Navegação', description: 'Use as setas para trocar de mês.' } },
-        { element: '#fin-grafico', popover: { title: 'Comparativo', description: 'Este mês contra o mês anterior, caixa do dia e KPIs.' } },
+        { element: '#fin-abas', popover: { title: 'Abas', description: 'Caixa é o dia a dia. Gráficos ficam na outra aba.' } },
         { element: '#fin-novo', popover: { title: 'Lançamento', description: 'Despesa, receita extra ou venda de produto do estoque.' } },
         { element: '#fin-filtros', popover: { title: 'Filtros', description: 'Separe serviços, produtos, mensalidades, despesas e a forma de pagamento.' } },
       ],
@@ -568,6 +569,33 @@ export default function Financeiro() {
       <div className="page-inner" style={{ padding: '20px' }}>
         {loading && <p style={{ textAlign: 'center', color: '#94a3b8' }}>Carregando...</p>}
 
+        <div id="fin-abas" className="fin-tabs">
+          <button type="button" className={aba === 'caixa' ? 'is-on' : ''} onClick={() => setAba('caixa')}>
+            <Wallet size={16} /> Caixa
+          </button>
+          <button type="button" className={aba === 'graficos' ? 'is-on' : ''} onClick={() => setAba('graficos')}>
+            <BarChart3 size={16} /> Gráficos
+          </button>
+        </div>
+
+        {aba === 'graficos' ? (
+          overview ? (
+            <FinanceOverview
+              mesLabel={overview.mesLabel}
+              mesAnteriorLabel={overview.mesAnteriorLabel}
+              kpis={overview.kpis}
+              daily={overview.daily}
+              comparacao={overview.comparacao}
+              projecao={overview.projecao}
+              clientes={overview.clientes}
+              pagamentos={overview.pagamentos}
+            />
+          ) : !loading ? (
+            <p style={{ textAlign: 'center', color: '#94a3b8' }}>Sem dados neste mês.</p>
+          ) : null
+        ) : (
+        <>
+
         <div id="fin-meta" className="ui-card" style={{ padding: '20px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ margin: 0, fontSize: '14px', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -600,6 +628,26 @@ export default function Financeiro() {
           )}
         </div>
 
+        {caixaView && (
+          <div className="ui-card" style={{ padding: 16, marginBottom: 16 }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 14, color: '#334155' }}>Caixa de hoje</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Entradas</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#166534' }}>R$ {money(caixaView.entradas)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Saídas</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#991b1b' }}>R$ {money(caixaView.saidas)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Atendimentos</div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}> {caixaView.atendimentos}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {staffList.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '15px', paddingBottom: '4px' }}>
             <button type="button" onClick={() => setStaffFiltro('')} style={staffFiltro ? btnFiltroInativo : btnFiltroAtivo}>Todas</button>
@@ -609,20 +657,6 @@ export default function Financeiro() {
               </button>
             ))}
           </div>
-        )}
-
-        {overview && (
-          <FinanceOverview
-            caixaHoje={caixaView}
-            mesLabel={overview.mesLabel}
-            mesAnteriorLabel={overview.mesAnteriorLabel}
-            kpis={overview.kpis}
-            daily={overview.daily}
-            comparacao={overview.comparacao}
-            projecao={overview.projecao}
-            clientes={overview.clientes}
-            pagamentos={overview.pagamentos}
-          />
         )}
 
         <div id="fin-cards" style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginBottom: '15px' }}>
@@ -802,6 +836,8 @@ export default function Financeiro() {
             </div>
           ))}
         </div>
+        </>
+        )}
       </div>
     </div>
   )
