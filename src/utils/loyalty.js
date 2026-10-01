@@ -1,13 +1,15 @@
+import { resolveWorkspaceId } from './workspace'
+
 /** Soma uma visita no cartão de fidelidade. Não usa RPC (evita 400 no console). */
 export async function incrementLoyaltyVisit(supabase, clientId) {
   if (!clientId) return
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
+  const ws = await resolveWorkspaceId(supabase)
+  if (!ws) return
 
   const { data: settings } = await supabase
     .from('loyalty_settings')
     .select('active')
-    .eq('user_id', user.id)
+    .eq('user_id', ws)
     .maybeSingle()
   if (settings?.active === false) return
 
@@ -15,7 +17,7 @@ export async function incrementLoyaltyVisit(supabase, clientId) {
     .from('clients')
     .select('loyalty_visits')
     .eq('id', clientId)
-    .eq('user_id', user.id)
+    .eq('user_id', ws)
     .maybeSingle()
   if (error || !client) return
 
@@ -23,5 +25,5 @@ export async function incrementLoyaltyVisit(supabase, clientId) {
     .from('clients')
     .update({ loyalty_visits: (Number(client.loyalty_visits) || 0) + 1 })
     .eq('id', clientId)
-    .eq('user_id', user.id)
+    .eq('user_id', ws)
 }

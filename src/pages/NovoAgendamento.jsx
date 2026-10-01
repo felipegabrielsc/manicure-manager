@@ -12,9 +12,12 @@ import {
 } from '../utils/scheduling'
 
 import { calcularDesconto } from '../utils/exportReport'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function NovoAgendamento() {
   const navigate = useNavigate()
+  const { profile } = useSessionProfile()
   const [loading, setLoading] = useState(false)
   const [userId, setUserId] = useState(null)
 
@@ -35,7 +38,7 @@ export default function NovoAgendamento() {
     async function fetchDados() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      setUserId(user.id)
+      setUserId(workspaceId(profile, user.id))
 
       const [{ data: c }, { data: s }, { data: st }, { data: loc }] = await Promise.all([
         supabase.from('clients').select('*').order('name'),
@@ -51,7 +54,7 @@ export default function NovoAgendamento() {
       if (defaultLoc) setSelectedLocationId(defaultLoc.id)
     }
     fetchDados()
-  }, [])
+  }, [profile])
 
   const clienteSelecionado = clientes.find(c => c.id == selectedClienteId)
   const servicoSelecionado = servicos.find(s => s.id == selectedServicoId)

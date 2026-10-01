@@ -24,6 +24,7 @@ import {
 } from '../utils/bookingMessages'
 import { toDateInputValue } from '../utils/dates'
 import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function Agenda() {
   const { profile } = useSessionProfile()
@@ -67,12 +68,12 @@ export default function Agenda() {
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
-      setUserId(user.id)
+      setUserId(workspaceId(profile, user.id))
       const { data } = await supabase.from('staff_members').select('id, name').eq('active', true).order('name')
       setStaffList(data || [])
       if (profile?.staff_member_id) setStaffFiltro(profile.staff_member_id)
     })
-  }, [profile?.staff_member_id])
+  }, [profile?.staff_member_id, profile?.workspace_id, profile?.salon_owner_id])
 
   async function carregarSemana() {
     const data = await fetchWeekAppointments(supabase, dataAtual)
@@ -83,7 +84,7 @@ export default function Agenda() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
-    const { data: perfil } = await supabase.from('profiles').select('reminders_enabled, reminder_hours_before').eq('id', user.id).single()
+    const { data: perfil } = await supabase.from('profiles').select('reminders_enabled, reminder_hours_before').eq('id', workspaceId(profile, user.id)).single()
     if (perfil?.reminders_enabled === false) return
 
     const horas = perfil?.reminder_hours_before ?? 24
