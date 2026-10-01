@@ -3,8 +3,11 @@ import { supabase } from '../supabaseClient'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, MapPin, Users, Plus, Trash2, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function Equipe() {
+  const { profile } = useSessionProfile()
   const [userId, setUserId] = useState(null)
   const [locations, setLocations] = useState([])
   const [staff, setStaff] = useState([])
@@ -21,11 +24,12 @@ export default function Equipe() {
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    setUserId(user.id)
+    const ws = workspaceId(profile, user.id)
+    setUserId(ws)
 
     const [{ data: locs }, { data: team }] = await Promise.all([
-      supabase.from('locations').select('*').eq('user_id', user.id).order('name'),
-      supabase.from('staff_members').select('*, locations(name)').eq('user_id', user.id).order('name'),
+      supabase.from('locations').select('*').eq('user_id', ws).order('name'),
+      supabase.from('staff_members').select('*, locations(name)').eq('user_id', ws).order('name'),
     ])
     setLocations(locs || [])
     setStaff(team || [])

@@ -62,9 +62,10 @@ supabase/migrations/025_pedir_horario_sem_id.sql
 supabase/migrations/026_fix_appointment_id_bigint.sql
 supabase/migrations/027_planos_preco_e_galeria.sql
 supabase/migrations/028_perfil_planos_pacote_retorno.sql
+supabase/migrations/029_workspace_followup_portfolio.sql
 ```
 
-**Site novo:** rode **001–028** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–029** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 

@@ -3,8 +3,11 @@ import { supabase } from '../supabaseClient'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Package, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function Estoque() {
+  const { profile } = useSessionProfile()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [nome, setNome] = useState('')
@@ -28,7 +31,7 @@ export default function Estoque() {
 
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('inventory_items').insert({
-      user_id: user.id,
+      user_id: workspaceId(profile, user.id),
       name: nome,
       quantity: parseFloat(quantidade.replace(',', '.')),
       min_quantity: parseFloat(minimo.replace(',', '.')) || 1,

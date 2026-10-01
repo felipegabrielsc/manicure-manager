@@ -10,8 +10,11 @@ import Modal from '../components/Modal'
 import { monthRangeLocal, money } from '../utils/dates'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function Clientes() {
+  const { profile } = useSessionProfile()
   const [loading, setLoading] = useState(true)
   const [clientes, setClientes] = useState([])
   const [busca, setBusca] = useState('')
@@ -157,7 +160,7 @@ export default function Clientes() {
     const dados = {
       name: nomeCliente,
       phone: phoneCliente,
-      user_id: user.id,
+      user_id: workspaceId(profile, user.id),
       type: tipoCliente,
     }
     if (tipoCliente === 'MENSALISTA') {

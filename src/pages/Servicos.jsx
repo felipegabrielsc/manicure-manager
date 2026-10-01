@@ -5,8 +5,11 @@ import { ArrowLeft, Save, Trash2, Scissors, DollarSign, Clock } from 'lucide-rea
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function Servicos() {
+  const { profile } = useSessionProfile()
   const [servicos, setServicos] = useState([])
   const [loading, setLoading] = useState(true)
   
@@ -90,7 +93,7 @@ export default function Servicos() {
         name: nome,
         default_price: parseFloat(preco.replace(',', '.')),
         duration_minutes: duracaoNum,
-        user_id: user.id
+        user_id: workspaceId(profile, user.id)
     }
 
     const { error } = await supabase.from('services').insert(novoServico)

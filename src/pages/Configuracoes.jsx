@@ -8,6 +8,7 @@ import { exportClientsCsv } from '../utils/exportReport'
 import UnlockAdminForm from '../components/UnlockAdminForm'
 import PortfolioEditor from '../components/PortfolioEditor'
 import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 import { isSiteOwnerId } from '../utils/siteOwner'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -17,6 +18,7 @@ import "driver.js/dist/driver.css";
 export default function Configuracoes() {
   const { profile, refreshProfile } = useSessionProfile()
   const [userId, setUserId] = useState(null)
+  const [authUserId, setAuthUserId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [savingLock, setSavingLock] = useState(false)
   
@@ -61,9 +63,14 @@ export default function Configuracoes() {
   async function carregarDados() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    setUserId(user.id)
+    const ws = workspaceId(profile, user.id)
+    setAuthUserId(user.id)
+    setUserId(ws)
 
-    const { data: perfil } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+    const { data: perfil } = await supabase.from('profiles').select('*').eq('id', ws).single()
+    const { data: meuPush } = ws === user.id
+      ? { data: perfil }
+      : await supabase.from('profiles').select('push_enabled').eq('id', user.id).maybeSingle()
     if (perfil) {
         setNomeNegocio(perfil.business_name || '')
         setMeuWhatsapp(perfil.whatsapp || '')
@@ -73,18 +80,18 @@ export default function Configuracoes() {
         setPerfilPublicoAtivo(perfil.public_profile_active !== false)
         setLembretesAtivos(perfil.reminders_enabled !== false)
         setHorasLembrete(perfil.reminder_hours_before ?? 24)
-        setPushAtivo(perfil.push_enabled === true)
+        setPushAtivo(meuPush?.push_enabled === true)
         setAgendamentoAtivo(perfil.booking_active === false ? false : true)
         setCoverUrl(perfil.cover_url || '')
         setLogoUrl(perfil.logo_url || '')
         setAutoConfirm(perfil.auto_confirm_public === true)
         setReviewFirst(perfil.review_first_visit !== false)
-    } else {
+    } else if (ws === user.id) {
         await supabase.from('profiles').insert({ id: user.id, booking_active: true })
         setAgendamentoAtivo(true)
     }
 
-    const { data: existingHours } = await supabase.from('business_hours').select('*').eq('user_id', user.id).order('day_of_week')
+    const { data: existingHours } = await supabase.from('business_hours').select('*').eq('user_id', ws).order('day_of_week')
     let hoursMap = []
     for (let i = 0; i < 7; i++) {
         const found = existingHours?.find(h => h.day_of_week === i)
@@ -97,14 +104,14 @@ export default function Configuracoes() {
             break_end: found.break_end ? toTimeInput(found.break_end, '') : '',
           })
         }
-        else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', break_start: '', break_end: '', is_closed: i === 0, user_id: user.id })
+        else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', break_start: '', break_end: '', is_closed: i === 0, user_id: ws })
     }
     setHorarios(hoursMap)
 
     const { data: slots } = await supabase
       .from('blocked_slots')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', ws)
       .gte('start_time', new Date().toISOString())
       .order('start_time')
 
@@ -144,7 +151,10 @@ export default function Configuracoes() {
 
   async function salvarDadosGerais() {
     const user = (await supabase.auth.getUser()).data.user
-    const { error: errPerfil } = await supabase.from('profiles').upsert({
+    if (!user) return
+    const ws = workspaceId(profile, user.id)
+    const { error: errPerfil } = ws === user.id
+      ? await supabase.from('profiles').upsert({
         id: user.id,
         business_name: nomeNegocio,
         whatsapp: meuWhatsapp.replace(/\D/g, ''),
@@ -160,14 +170,15 @@ export default function Configuracoes() {
         auto_confirm_public: autoConfirm,
         review_first_visit: reviewFirst,
     })
-    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed, user_id }) => ({
+      : { error: null }
+    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed }) => ({
       day_of_week,
       open_time: toTimeInput(open_time, '09:00'),
       close_time: toTimeInput(close_time, '18:00'),
       break_start: break_start ? toTimeInput(break_start) : null,
       break_end: break_end ? toTimeInput(break_end) : null,
       is_closed,
-      user_id,
+      user_id: ws,
     }))
     const { error: errHorario } = await supabase.from('business_hours').upsert(dadosHorarios, { onConflict: 'user_id, day_of_week' })
     if (errPerfil || errHorario) {
@@ -178,10 +189,10 @@ export default function Configuracoes() {
   }
 
   async function togglePush() {
-    if (!userId) return
+    if (!authUserId) return
     const caps = getPushCapabilities()
     if (pushAtivo) {
-      await unsubscribePush(userId)
+      await unsubscribePush(authUserId)
       setPushAtivo(false)
       toast('Notificações desativadas')
       return
@@ -191,7 +202,7 @@ export default function Configuracoes() {
       if (!caps.notificationApi) return toast.error('Este navegador não suporta notificações.')
       return toast.error('Instale o app na tela inicial (PWA) e tente de novo.')
     }
-    const result = await subscribeToPush(userId)
+    const result = await subscribeToPush(authUserId)
     if (result.ok) {
       setPushAtivo(true)
       toast.success('Permissão salva. Com o envio no servidor ligado, o aviso chega com o app fechado.')
