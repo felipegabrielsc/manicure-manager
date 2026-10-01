@@ -38,6 +38,18 @@ async function sendToUser(admin: ReturnType<typeof createClient>, userId: string
   return sent
 }
 
+async function queuedInNotifications(admin: ReturnType<typeof createClient>, appointmentId: number, types: string[]) {
+  const { data, error } = await admin
+    .from('notifications')
+    .select('id')
+    .eq('appointment_id', appointmentId)
+    .eq('channel', 'push')
+    .in('type', types)
+    .limit(1)
+  if (error) return false
+  return (data?.length || 0) > 0
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return json({ ok: true })
   if (!authorized(req)) return json({ ok: false, reason: 'unauthorized' }, 401)
@@ -67,6 +79,7 @@ Deno.serve(async (req) => {
     .is('push_pending_sent_at', null)
 
   for (const apt of pendentes || []) {
+    if (await queuedInNotifications(admin, apt.id, ['appointment_created'])) continue
     const { data: perfil } = await admin.from('profiles').select('push_enabled').eq('id', apt.user_id).single()
     if (!perfil?.push_enabled) continue
     const nome = apt.clients?.name || 'Uma cliente'
@@ -91,6 +104,7 @@ Deno.serve(async (req) => {
   const profileCache = new Map<string, { push_enabled: boolean; reminders_enabled: boolean; reminder_hours_before: number }>()
 
   for (const apt of agendados || []) {
+    if (await queuedInNotifications(admin, apt.id, ['appointment_reminder_24h', 'appointment_reminder_2h'])) continue
     if (!profileCache.has(apt.user_id)) {
       const { data: perfil } = await admin
         .from('profiles')

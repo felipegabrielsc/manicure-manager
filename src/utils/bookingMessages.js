@@ -97,3 +97,22 @@ export function msgRecibo(apt) {
 export function msgRetornoLembrete(nome) {
   return `Oi ${nome}! Passando para lembrar do retorno das unhas daqui a uns 15 dias. Quando quiser, é só marcar pelo link ou me chamar aqui 💜`
 }
+
+export function msgCancelamento(apt, status, motivo) {
+  const nome = apt?.clients?.name || 'Cliente'
+  const fato = status === 'FALTOU' ? 'marcado como falta' : 'cancelado'
+  const extra = motivo && String(motivo).trim() ? `: ${String(motivo).trim()}` : ''
+  return `Oi ${nome}, seu horário foi ${fato}${extra}.`
+}
+
+export function msgRetornoMarcado(apt, start) {
+  const d = start instanceof Date ? start : new Date(start)
+  const data = d.toLocaleDateString('pt-BR')
+  const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  return `Oi ${apt?.clients?.name}! Já deixei seu retorno: ${data} às ${hora}.`
+}
+
+export function msgEsperaDisponivel(item, link) {
+  const servico = item?.services?.name ? ` para ${item.services.name}` : ''
+  return `Oi ${item?.name}! Abriu um horário na agenda${servico}. Pode marcar aqui: ${link}`
+}

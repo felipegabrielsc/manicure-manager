@@ -63,9 +63,10 @@ supabase/migrations/026_fix_appointment_id_bigint.sql
 supabase/migrations/027_planos_preco_e_galeria.sql
 supabase/migrations/028_perfil_planos_pacote_retorno.sql
 supabase/migrations/029_workspace_followup_portfolio.sql
+supabase/migrations/030_notifications.sql
 ```
 
-**Site novo:** rode **001–029** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–030** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. A **030** cria a fila de notificações; sem ela a agenda continua, mas o lembrete automático no servidor não grava. Depois faça o deploy de `mp-webhook`, `push-dispatch` e `notification-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -162,7 +163,16 @@ supabase secrets set CRON_SECRET=uma-senha-longa
 
 `https://SEU_PROJETO.supabase.co/functions/v1/push-dispatch`
 
-6. No celular: instale o PWA e ative em **Configurações → Notificações Push**
+6. Fila da etapa 4, depois de colar a **030**:
+
+```bash
+supabase functions deploy notification-dispatch
+supabase functions deploy push-dispatch
+```
+
+O `notification-dispatch` usa o mesmo `CRON_SECRET`. Agende a cada minuto. Ele manda o push e segura o WhatsApp em `pending` (`no_connection`) até a conexão da etapa 5. O `push-dispatch` redeployado não repete um push que já está nessa fila.
+
+7. No celular: instale o PWA e ative em **Configurações → Notificações Push**
 
 A agenda mostra o nome da profissional e deixa filtrar. Duas profissionais podem ocupar o mesmo horário; conflito só na mesma pessoa (ou se o horário não tiver profissional).
 
