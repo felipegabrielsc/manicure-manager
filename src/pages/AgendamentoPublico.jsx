@@ -13,6 +13,12 @@ import {
 import { toDateInputValue } from '../utils/dates'
 import { msgPedidoPublico } from '../utils/bookingMessages'
 
+function codigoPedido() {
+  const buf = new Uint32Array(1)
+  crypto.getRandomValues(buf)
+  return String(1000 + (buf[0] % 9000))
+}
+
 export default function AgendamentoPublico() {
   const { userId } = useParams()
 
@@ -51,7 +57,7 @@ export default function AgendamentoPublico() {
         setManicurePhone(perfil?.whatsapp || '')
         setBusinessName(perfil?.business_name || 'Manicure')
         setServicos(agenda.services || [])
-        setCodigoValidacao(Math.floor(1000 + Math.random() * 9000).toString())
+        setCodigoValidacao(codigoPedido())
       } catch (err) {
         console.error(err)
         setAgendaAberta(false)

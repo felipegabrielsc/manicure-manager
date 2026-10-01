@@ -3,12 +3,13 @@ import { supabase } from '../supabaseClient'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
 export default function Onboarding() {
   const navigate = useNavigate()
-  const { refreshProfile } = useSessionProfile()
+  const { profile, refreshProfile } = useSessionProfile()
   const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [nome, setNome] = useState('')
@@ -39,6 +40,7 @@ export default function Onboarding() {
       return toast.error('Sessão expirada')
     }
 
+    const ws = workspaceId(profile, user.id)
     await supabase.from('profiles').update({
       business_name: nome.trim(),
       whatsapp: whatsapp.replace(/\D/g, ''),
@@ -50,20 +52,20 @@ export default function Onboarding() {
     for (let d = 0; d < 7; d++) {
       const fechado = d === 0
       rows.push({
-        user_id: user.id,
+        user_id: ws,
         day_of_week: d,
         open_time: abre,
         close_time: fecha,
         is_closed: fechado,
       })
     }
-    await supabase.from('business_hours').delete().eq('user_id', user.id)
+    await supabase.from('business_hours').delete().eq('user_id', ws)
     await supabase.from('business_hours').insert(rows)
 
-    const { count } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('user_id', user.id)
+    const { count } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('user_id', ws)
     if (!count) {
       await supabase.from('services').insert({
-        user_id: user.id,
+        user_id: ws,
         name: servico.trim() || 'Pé e mão',
         default_price: parseFloat(String(preco).replace(',', '.')) || 50,
         duration_minutes: 60,
@@ -72,7 +74,7 @@ export default function Onboarding() {
 
     await refreshProfile()
     setSaving(false)
-    setLinkPublico(`${window.location.origin}/agendar/${user.id}`)
+    setLinkPublico(`${window.location.origin}/agendar/${ws}`)
     toast.success('Pronto! Copie o link da sua agenda.')
   }
 

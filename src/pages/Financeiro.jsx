@@ -11,6 +11,8 @@ import { exportToCsv, exportToPrint } from '../utils/exportReport'
 import { formatCivilDate, money, monthRangeLocal, monthlyDueDate, toDateInputValue } from '../utils/dates'
 import toast from 'react-hot-toast'
 import { openWhatsApp } from '../utils/whatsapp'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 const METODOS = ['PIX', 'DINHEIRO', 'CARTAO']
 const FILTRO_LABEL = {
@@ -30,6 +32,7 @@ function categoriaDe(m) {
 }
 
 export default function Financeiro() {
+  const { profile } = useSessionProfile()
   const [loading, setLoading] = useState(true)
   const [dataAtual, setDataAtual] = useState(new Date())
   const [todasMovimentacoes, setTodasMovimentacoes] = useState([])
@@ -330,7 +333,7 @@ export default function Financeiro() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: goal } = await supabase.from('financial_goals').select('target_amount')
-        .eq('user_id', user.id)
+        .eq('user_id', workspaceId(profile, user.id))
         .eq('year', dataAtual.getFullYear())
         .eq('month', dataAtual.getMonth() + 1)
         .maybeSingle()
@@ -345,7 +348,7 @@ export default function Financeiro() {
     if (!valorMeta || valorMeta <= 0) return toast.error('Informe um valor válido')
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('financial_goals').upsert({
-      user_id: user.id,
+      user_id: workspaceId(profile, user.id),
       year: dataAtual.getFullYear(),
       month: dataAtual.getMonth() + 1,
       target_amount: valorMeta,
@@ -481,7 +484,7 @@ export default function Financeiro() {
       type,
       date: new Date(`${dataLancamento}T12:00:00`).toISOString(),
       client_id: clientIdVinculado,
-      user_id: user.id,
+      user_id: workspaceId(profile, user.id),
       category,
       payment_method: type === 'RECEITA' ? metodoPagamento : (metodoPagamento || null),
       inventory_item_id: inventoryItemId,

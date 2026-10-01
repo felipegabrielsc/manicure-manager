@@ -1,5 +1,7 @@
 # Plano de ação — Manicure Manager
 
+Etapas 1 e 2 estão no código. A migration `029_workspace_followup_portfolio.sql` precisa ser colada no SQL Editor do Supabase antes do deploy. As etapas 3 a 9 ainda não começaram.
+
 Objetivo: o salão continua funcionando se o WhatsApp cair, e o WhatsApp passa a confirmar, lembrar, avisar cancelamento e pedir retorno sem depender do navegador aberto.
 
 Cada etapa abaixo entra em produção sozinha. A seguinte só começa quando a anterior está no ar e a agenda atual continua igual para a dona do salão.
