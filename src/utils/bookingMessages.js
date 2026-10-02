@@ -94,8 +94,30 @@ export function msgRecibo(apt) {
   ].filter(Boolean).join('\n')
 }
 
-export function msgRetornoLembrete(nome) {
-  return `Oi ${nome}! Passando para lembrar do retorno das unhas daqui a uns 15 dias. Quando quiser, é só marcar pelo link ou me chamar aqui 💜`
+export function msgPedidoRecebido(apt) {
+  const { data, hora } = quando(apt.start_time)
+  const nome = apt?.clients?.name || 'Cliente'
+  return `Oi ${nome}! Recebi seu pedido para ${data} às ${hora} (${nomeServico(apt)}). Já te confirmo por aqui.`
+}
+
+export function msgRemarcado(apt) {
+  const { data, hora } = quando(apt.start_time)
+  const nome = apt?.clients?.name || 'Cliente'
+  return `Oi ${nome}! Seu horário foi remarcado para ${data} às ${hora} (${nomeServico(apt)}).`
+}
+
+export function msgPosAtendimento(apt) {
+  const nome = apt?.clients?.name || 'Cliente'
+  return `Oi ${nome}! Obrigada pelo atendimento de ${nomeServico(apt)}. Se puder, me conta como ficou 💜`
+}
+
+export function msgRetornoLembrete(nome, dias = 15) {
+  return `Oi ${nome}! Passando para lembrar do retorno das unhas daqui a uns ${dias} dias. Quando quiser, é só marcar pelo link ou me chamar aqui 💜`
+}
+
+export function msgCobrancaMensalidade({ name, amount }) {
+  const valor = amount != null && Number(amount) > 0 ? ` no valor de R$ ${money(amount)}` : ''
+  return `Oi ${name}! Sua mensalidade vence hoje${valor}. Pode pagar por PIX quando puder 💜`
 }
 
 export function msgCancelamento(apt, status, motivo) {
@@ -114,5 +136,6 @@ export function msgRetornoMarcado(apt, start) {
 
 export function msgEsperaDisponivel(item, link) {
   const servico = item?.services?.name ? ` para ${item.services.name}` : ''
-  return `Oi ${item?.name}! Abriu um horário na agenda${servico}. Pode marcar aqui: ${link}`
+  const convite = link ? `Pode marcar aqui: ${link}` : 'Pode me chamar aqui para marcar.'
+  return `Oi ${item?.name}! Abriu um horário na agenda${servico}. ${convite}`
 }

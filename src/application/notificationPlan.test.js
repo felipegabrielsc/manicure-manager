@@ -82,6 +82,28 @@ describe('notificationPlan', () => {
     expect(minuteInSaoPaulo(reminder.scheduled_for)).toBe(minuteInSaoPaulo(now))
   })
 
+  it('o WhatsApp da confirmação fala com a cliente e o push com o salão', () => {
+    const rows = planAppointmentNotifications({ appointment, now })
+    const zap = rows.find((row) => row.type === 'appointment_confirmed' && row.channel === 'whatsapp')
+    const push = rows.find((row) => row.type === 'appointment_confirmed' && row.channel === 'push')
+    expect(zap.payload.text).toContain('confirmado')
+    expect(zap.payload.text).toContain('Maria')
+    expect(push.payload.title).toBe('Horário confirmado')
+  })
+
+  it('serviço com manutenção agenda o retorno só no WhatsApp', () => {
+    const rows = planAppointmentNotifications({
+      appointment: { ...appointment, status: 'CONCLUIDO' },
+      maintenanceDays: 21,
+      now,
+    })
+    const retorno = rows.find((row) => row.type === 'client_return_reminder')
+    expect(retorno.channel).toBe('whatsapp')
+    expect(retorno.payload.text).toContain('21 dias')
+    expect(minuteInSaoPaulo(retorno.scheduled_for)).toBe(minuteInSaoPaulo(new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000)))
+    expect(rows.some((row) => row.type === 'client_return_reminder' && row.channel === 'push')).toBe(false)
+  })
+
   it('retry para em failed na quarta falha', () => {
     expect(retryAfterFailure(1, now).delayMs).toBe(30_000)
     expect(retryAfterFailure(2, now).delayMs).toBe(120_000)

@@ -1,6 +1,6 @@
 # Plano de ação — Manicure Manager
 
-Etapas 1 a 4 estão no código. As migrations `029_workspace_followup_portfolio.sql` e `030_notifications.sql` precisam ser coladas no SQL Editor do Supabase antes do deploy. O worker `notification-dispatch` e o `push-dispatch` atualizado entram no mesmo cron (`CRON_SECRET`). As etapas 5 a 9 ainda não começaram.
+Etapas 1 a 6 estão no código. Cole as migrations `029` a `032` no SQL Editor antes do deploy. O envio de WhatsApp fica desligado até existirem `WA_AKG_URL`, `WA_AKG_API_KEY` e `WHATSAPP_WEBHOOK_SECRET` nos secrets da Edge Function. As etapas 7 a 9 ainda não começaram.
 
 Objetivo: o salão continua funcionando se o WhatsApp cair, e o WhatsApp passa a confirmar, lembrar, avisar cancelamento e pedir retorno sem depender do navegador aberto.
 

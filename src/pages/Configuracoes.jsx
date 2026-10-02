@@ -11,6 +11,7 @@ import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId } from '../utils/workspace'
 import { isSiteOwnerId } from '../utils/siteOwner'
 import { Link } from 'react-router-dom'
+import WhatsAppStatus from '../components/WhatsAppStatus'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
@@ -362,8 +363,10 @@ export default function Configuracoes() {
                     <option value="48">48 horas</option>
                 </select>
             </div>
-            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>Na agenda, você verá clientes que precisam de lembrete e poderá enviar via WhatsApp.</p>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>O lembrete sai sozinho pela fila, no horário configurado. O botão da agenda continua como reenvio manual.</p>
         </div>
+
+        {userId && <WhatsAppStatus userId={userId} manage />}
 
         {/* PUSH NOTIFICATIONS */}
         <div id="card-push" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>

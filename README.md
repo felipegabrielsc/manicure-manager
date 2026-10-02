@@ -64,9 +64,11 @@ supabase/migrations/027_planos_preco_e_galeria.sql
 supabase/migrations/028_perfil_planos_pacote_retorno.sql
 supabase/migrations/029_workspace_followup_portfolio.sql
 supabase/migrations/030_notifications.sql
+supabase/migrations/031_whatsapp_connections.sql
+supabase/migrations/032_notification_automations.sql
 ```
 
-**Site novo:** rode **001–030** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. A **030** cria a fila de notificações; sem ela a agenda continua, mas o lembrete automático no servidor não grava. Depois faça o deploy de `mp-webhook`, `push-dispatch` e `notification-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–032** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. A **030** cria a fila de notificações; sem ela a agenda continua, mas o lembrete automático no servidor não grava. A **031** guarda o status da conexão do WhatsApp. A **032** grava os textos da cliente, o retorno do serviço e o aviso da lista de espera. Depois faça o deploy de `mp-webhook`, `push-dispatch`, `notification-dispatch`, `whatsapp-connect` e `whatsapp-webhook`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -170,9 +172,22 @@ supabase functions deploy notification-dispatch
 supabase functions deploy push-dispatch
 ```
 
-O `notification-dispatch` usa o mesmo `CRON_SECRET`. Agende a cada minuto. Ele manda o push e segura o WhatsApp em `pending` (`no_connection`) até a conexão da etapa 5. O `push-dispatch` redeployado não repete um push que já está nessa fila.
+O `notification-dispatch` usa o mesmo `CRON_SECRET`. Agende a cada minuto. Ele manda o push. O WhatsApp sai por ele quando a conexão está `connected`. Sem gateway, a linha fica `pending` com `no_connection` e a agenda abre normalmente. O `push-dispatch` redeployado não repete um push que já está nessa fila.
 
-7. No celular: instale o PWA e ative em **Configurações → Notificações Push**
+7. WhatsApp automático, com o gateway fora deste repositório:
+
+```bash
+supabase functions deploy whatsapp-connect
+supabase functions deploy whatsapp-webhook
+supabase functions deploy notification-dispatch
+supabase secrets set WA_AKG_URL=https://seu-gateway
+supabase secrets set WA_AKG_API_KEY=wag_sua_chave
+supabase secrets set WHATSAPP_WEBHOOK_SECRET=uma-senha-longa
+```
+
+Não coloque `WA_AKG_API_KEY` em variável `VITE_` nem na Vercel do site. Sem esses três secrets o botão Conectar avisa que o gateway não está configurado e nenhum texto automático sai.
+
+8. No celular: instale o PWA e ative em **Configurações → Notificações Push**
 
 A agenda mostra o nome da profissional e deixa filtrar. Duas profissionais podem ocupar o mesmo horário; conflito só na mesma pessoa (ou se o horário não tiver profissional).
 

@@ -5,17 +5,13 @@ import {
   validateBookingSlot,
 } from '../utils/scheduling'
 import { openWhatsApp } from '../utils/whatsapp'
-import {
-  msgCancelamento,
-  msgConfirmarHorario,
-  msgEsperaDisponivel,
-  msgLembrete,
-  msgRecusarHorario,
-  msgRetornoLembrete,
-  msgRetornoMarcado,
-} from '../utils/bookingMessages'
+import { msgLembrete, msgRetornoLembrete } from '../utils/bookingMessages'
 import { toDateInputValue } from '../utils/dates'
-import { syncAppointmentNotifications } from './notificationService.js'
+import {
+  enqueueWaitlistAvailable,
+  marcarEnvioManual,
+  syncAppointmentNotifications,
+} from './notificationService.js'
 
 async function syncQuiet(supabase, appointment, options) {
   try {
@@ -108,22 +104,24 @@ export async function criarAgendamento(supabase, {
 export async function confirmarPedido(supabase, agendamento) {
   const { error } = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
   if (error) return { ok: false, error: error.message }
-  const message = msgConfirmarHorario(agendamento)
   await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO' })
-  const opened = openWhatsApp(agendamento.clients?.phone, message)
-  return { ok: true, opened, message }
+  return { ok: true }
 }
 
-export async function recusarPedido(supabase, agendamento, motivo) {
+export async function recusarPedido(supabase, agendamento, motivo, origin) {
   const { error } = await supabase.from('appointments').update({
     status: 'CANCELADO',
     cancellation_reason: motivo || 'Recusado',
   }).eq('id', agendamento.id)
   if (error) return { ok: false, error: error.message }
-  const message = msgRecusarHorario(agendamento, motivo)
-  await syncQuiet(supabase, { ...agendamento, status: 'CANCELADO' })
-  const opened = openWhatsApp(agendamento.clients?.phone, message)
-  return { ok: true, opened, message }
+  const atual = { ...agendamento, status: 'CANCELADO', cancellation_reason: motivo || 'Recusado' }
+  await syncQuiet(supabase, atual)
+  await enqueueWaitlistAvailable(supabase, {
+    workspaceId: agendamento.user_id,
+    serviceId: agendamento.service_id,
+    origin,
+  }).catch(() => {})
+  return { ok: true }
 }
 
 export async function concluirAtendimento(supabase, { agendamento, metodo }) {
@@ -175,7 +173,7 @@ export async function reabrirAtendimento(supabase, agendamento) {
   return { ok: true }
 }
 
-export async function remarcar(supabase, { agendamento, workspaceId, startTime, staffId }) {
+export async function remarcar(supabase, { agendamento, workspaceId, startTime, staffId, origin }) {
   const durationMinutes = getServiceDuration(agendamento.services)
   const ctx = await fetchSchedulingContext(supabase, workspaceId, startTime, agendamento.id)
   const validation = validarRemarcacao({
@@ -200,24 +198,42 @@ export async function remarcar(supabase, { agendamento, workspaceId, startTime, 
     start_time: startTime.toISOString(),
     status: agendamento.status || 'AGENDADO',
   }, { rescheduled: true })
+  await enqueueWaitlistAvailable(supabase, {
+    workspaceId,
+    serviceId: agendamento.service_id,
+    origin,
+  }).catch(() => {})
   return { ok: true }
 }
 
-export async function marcarAusencia(supabase, { agendamento, status, motivo }) {
+export async function marcarAusencia(supabase, { agendamento, status, motivo, origin }) {
+  const reason = motivo?.trim() || null
   const { error } = await supabase.from('appointments').update({
     status,
-    cancellation_reason: motivo?.trim() || null,
+    cancellation_reason: reason,
   }).eq('id', agendamento.id)
   if (error) return { ok: false, error: error.message || 'Não foi possível atualizar' }
-  const message = msgCancelamento(agendamento, status, motivo)
-  await syncQuiet(supabase, { ...agendamento, status })
-  const opened = agendamento.clients?.phone ? openWhatsApp(agendamento.clients.phone, message) : false
-  return { ok: true, opened, message }
+  await syncQuiet(supabase, { ...agendamento, status, cancellation_reason: reason })
+  await enqueueWaitlistAvailable(supabase, {
+    workspaceId: agendamento.user_id,
+    serviceId: agendamento.service_id,
+    origin,
+  }).catch(() => {})
+  return { ok: true }
 }
 
-export async function excluirAgendamento(supabase, id) {
+export async function excluirAgendamento(supabase, agendamento, { origin } = {}) {
+  const id = agendamento?.id ?? agendamento
   const { error } = await supabase.from('appointments').delete().eq('id', id)
-  return { ok: !error, error: error ? 'Erro ao excluir' : null }
+  if (error) return { ok: false, error: 'Erro ao excluir' }
+  if (agendamento?.service_id) {
+    await enqueueWaitlistAvailable(supabase, {
+      workspaceId: agendamento.user_id,
+      serviceId: agendamento.service_id,
+      origin,
+    }).catch(() => {})
+  }
+  return { ok: true }
 }
 
 export async function marcarRetorno(supabase, { agendamento, workspaceId, dias }) {
@@ -243,9 +259,7 @@ export async function marcarRetorno(supabase, { agendamento, workspaceId, dias }
       clients: agendamento.clients,
     })
   }
-  const message = msgRetornoMarcado(agendamento, start)
-  const opened = agendamento.clients?.phone ? openWhatsApp(agendamento.clients.phone, message) : false
-  return { ok: true, opened, message, start }
+  return { ok: true, start }
 }
 
 export async function registrarLembreteRetorno(supabase, { agendamento, workspaceId, dias = 15 }) {
@@ -265,16 +279,11 @@ export async function registrarLembreteRetorno(supabase, { agendamento, workspac
 }
 
 export async function avisarEspera(supabase, { item, workspaceId, origin }) {
-  const link = `${origin}/agendar/${workspaceId}`
-  const message = msgEsperaDisponivel(item, link)
-  const opened = openWhatsApp(item.phone, message)
-  if (!opened) return { ok: false, error: 'Sem WhatsApp nesta espera' }
-  const { error } = await supabase.from('waitlist').update({
-    status: 'AVISADA',
-    notified_at: new Date().toISOString(),
-  }).eq('id', item.id)
-  if (error) return { ok: false, error: error.message }
-  return { ok: true, message }
+  if (!item?.phone) return { ok: false, error: 'Sem WhatsApp nesta espera' }
+  const result = await enqueueWaitlistAvailable(supabase, { workspaceId, item, origin })
+  if (!result.ok) return { ok: false, error: result.error || 'Não foi possível avisar' }
+  if (result.skipped) return { ok: false, error: 'Sem WhatsApp nesta espera' }
+  return { ok: true, message: result.message }
 }
 
 export async function enviarLembrete(supabase, agendamento, origin) {
@@ -286,6 +295,10 @@ export async function enviarLembrete(supabase, agendamento, origin) {
   const { error } = await supabase.from('appointments').update({
     reminder_sent_at: new Date().toISOString(),
   }).eq('id', agendamento.id)
+  await marcarEnvioManual(supabase, {
+    appointmentId: agendamento.id,
+    types: ['appointment_reminder_24h', 'appointment_reminder_2h'],
+  }).catch(() => {})
   return { ok: !error, error: error?.message, message }
 }
 
@@ -295,5 +308,29 @@ export async function marcarRetornoEnviado(supabase, item) {
   const { error } = await supabase.from('followup_reminders').update({
     sent_at: new Date().toISOString(),
   }).eq('id', item.id)
+  if (item.client_id) {
+    await marcarEnvioManual(supabase, {
+      clientId: item.client_id,
+      types: ['client_return_reminder'],
+    }).catch(() => {})
+  }
   return { ok: !error, error: error?.message }
+}
+
+const AVISO_MANUAL = [
+  'appointment_created',
+  'appointment_confirmed',
+  'appointment_rescheduled',
+  'appointment_cancelled',
+  'appointment_completed',
+]
+
+export async function reenviarManual(supabase, agendamento, message) {
+  const opened = openWhatsApp(agendamento.clients?.phone, message)
+  if (!opened) return { ok: false, error: 'Sem telefone' }
+  await marcarEnvioManual(supabase, {
+    appointmentId: agendamento.id,
+    types: AVISO_MANUAL,
+  }).catch(() => {})
+  return { ok: true }
 }
