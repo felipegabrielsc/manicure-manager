@@ -18,8 +18,9 @@ import {
   msgRecibo,
 } from '../utils/bookingMessages'
 import { useSessionProfile } from '../context/SessionProfile'
-import { workspaceId } from '../utils/workspace'
+import { workspaceId, isStaffProfile } from '../utils/workspace'
 import { toDateInputValue } from '../utils/dates'
+import WhatsAppStatus from '../components/WhatsAppStatus'
 import {
   avisarEspera,
   confirmarPedido,
@@ -31,6 +32,7 @@ import {
   marcarRetornoEnviado,
   reabrirAtendimento,
   recusarPedido,
+  reenviarManual,
   registrarLembreteRetorno,
   remarcar,
 } from '../application/appointmentService'
@@ -126,7 +128,7 @@ export default function Agenda() {
   async function avisarItemEspera(item) {
     const result = await avisarEspera(supabase, { item, workspaceId: userId, origin: window.location.origin })
     if (!result.ok) return toast.error(result.error)
-    toast.success('Aviso enviado')
+    toast.success('Aviso entrou na fila')
     carregarEspera()
   }
 
@@ -216,7 +218,7 @@ export default function Agenda() {
 
   const deletarAgendamento = async () => {
     if (!agendamentoSelecionado) return
-    const result = await excluirAgendamento(supabase, agendamentoSelecionado.id)
+    const result = await excluirAgendamento(supabase, agendamentoSelecionado, { origin: window.location.origin })
     if (result.ok) { buscarAgendamentos(); fecharOpcoes(); setAlertModal({ isOpen: false }); toast.success('Excluído') }
     else { toast.error(result.error) }
   }
@@ -228,6 +230,7 @@ export default function Agenda() {
       workspaceId: userId,
       startTime: new Date(novaDataHora),
       staffId: staffEditId || null,
+      origin: window.location.origin,
     })
     if (result.ok) { buscarAgendamentos(); carregarSemana(); fecharOpcoes(); toast.success('Remarcado!') }
     else { toast.error(result.error || 'Erro ao remarcar') }
@@ -239,6 +242,7 @@ export default function Agenda() {
       agendamento: agendamentoSelecionado,
       status: motivoTipo,
       motivo: motivoTexto,
+      origin: window.location.origin,
     })
     if (!result.ok) return toast.error(result.error)
     toast(motivoTipo === 'FALTOU' ? 'Falta registrada' : 'Cancelado', { icon: motivoTipo === 'FALTOU' ? '🚫' : '↩️' })
@@ -400,6 +404,7 @@ export default function Agenda() {
       )}
 
       <div style={{ background: 'white', padding: '10px 15px', position: 'sticky', top: 0, zIndex: 10, borderBottom: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {userId && <WhatsAppStatus userId={userId} canOpenSettings={!isStaffProfile(profile)} />}
 
         {/* Navegação de Data */}
         <div id="nav-datas" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f9fafb', padding: '5px', borderRadius: '12px' }}>
@@ -606,24 +611,17 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
     e.stopPropagation()
     const motivo = window.prompt('Motivo do recuso (opcional):', '')
     if (motivo === null) return
-    const result = await recusarPedido(supabase, agendamento, motivo)
+    const result = await recusarPedido(supabase, agendamento, motivo, window.location.origin)
     if (!result.ok) return toast.error(result.error)
     toast('Pedido recusado', { icon: '🗑️' })
     onRefresh?.()
   }
 
-  const abrirWhatsapp = (e) => {
+  const abrirWhatsapp = async (e) => {
     e.stopPropagation()
-    const tel = agendamento.clients?.phone?.replace(/\D/g, '')
-    if (!tel) return toast.error("Sem telefone!")
-
-    // 1. GERA O LINK DO CARTÃO DIGITAL
     const linkCartao = `${window.location.origin}/resumo/${agendamento.id}`
-
-    // 2. MONTA O TEXTO COM O LINK NO FINAL
-    const textoBase = msgZapAgenda(agendamento, linkCartao)
-
-    window.open(`https://wa.me/${tel.startsWith('55') ? tel : `55${tel}`}?text=${encodeURIComponent(textoBase)}`, '_blank')
+    const result = await reenviarManual(supabase, agendamento, msgZapAgenda(agendamento, linkCartao))
+    if (!result.ok) toast.error(result.error || 'Sem telefone!')
   }
 
   // CARD PENDENTE

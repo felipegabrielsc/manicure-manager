@@ -1,6 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import webpush from 'npm:web-push@3.6.7'
 import { json } from '../_shared/cors.ts'
+import { morningSaoPauloIso } from '../_shared/whatsapp/format.ts'
+import { createWhatsAppProvider } from '../_shared/whatsapp/provider.ts'
 
 const RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000]
 
@@ -43,6 +45,76 @@ async function sendPush(admin: ReturnType<typeof createClient>, userId: string, 
   return sent > 0 ? { ok: true } : { ok: false, reason: 'push_failed' }
 }
 
+function textoMensalidade(name: string, amount: number | null) {
+  const valor = amount != null && Number(amount) > 0 ? ` no valor de R$ ${Number(amount).toFixed(2)}` : ''
+  return `Oi ${name}! Sua mensalidade vence hoje${valor}. Pode pagar por PIX quando puder 💜`
+}
+
+function dueToday(dueDay: number, now: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value || '0')
+  const year = pick('year')
+  const month = pick('month')
+  const day = pick('day')
+  const lastDay = new Date(year, month, 0).getDate()
+  return dueDay >= lastDay ? day === lastDay : day === dueDay
+}
+
+async function enqueuePaymentReminders(admin: ReturnType<typeof createClient>, now: Date) {
+  const { data: clientes } = await admin
+    .from('clients')
+    .select('id, user_id, name, phone, monthly_fee, monthly_due_day, type')
+    .eq('type', 'MENSALISTA')
+  const scheduledFor = morningSaoPauloIso(now)
+  const minute = scheduledFor.slice(0, 10) + 'T08:00'
+  for (const cli of clientes || []) {
+    if (!cli.phone) continue
+    if (!dueToday(Number(cli.monthly_due_day) || 10, now)) continue
+    const text = textoMensalidade(cli.name || 'Cliente', cli.monthly_fee)
+    await admin.from('notifications').upsert({
+      user_id: cli.user_id,
+      client_id: cli.id,
+      channel: 'whatsapp',
+      type: 'payment_reminder',
+      scheduled_for: scheduledFor,
+      status: 'pending',
+      next_attempt_at: scheduledFor,
+      payload: { title: 'Mensalidade', body: text, url: '/financeiro', text, phone: cli.phone },
+      idempotency_key: `${cli.user_id}:${cli.id}:payment_reminder:whatsapp:${minute}`,
+    }, { onConflict: 'idempotency_key', ignoreDuplicates: true })
+  }
+}
+
+async function destinationPhone(admin: ReturnType<typeof createClient>, row: { payload?: { phone?: string }; client_id?: string; appointment_id?: number }) {
+  if (row.payload?.phone) return row.payload.phone
+  if (row.client_id) {
+    const { data } = await admin.from('clients').select('phone').eq('id', row.client_id).maybeSingle()
+    if (data?.phone) return data.phone
+  }
+  if (row.appointment_id) {
+    const { data } = await admin.from('appointments').select('clients(phone)').eq('id', row.appointment_id).maybeSingle()
+    const clients = data?.clients as { phone?: string } | { phone?: string }[] | null
+    const phone = Array.isArray(clients) ? clients[0]?.phone : clients?.phone
+    if (phone) return phone
+  }
+  return null
+}
+
+async function holdWhatsapp(admin: ReturnType<typeof createClient>, id: string, errorMessage: string) {
+  const next = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+  await admin.from('notifications').update({
+    status: 'pending',
+    error_message: errorMessage,
+    next_attempt_at: next,
+    updated_at: new Date().toISOString(),
+  }).eq('id', id)
+}
+
 async function markLegacy(admin: ReturnType<typeof createClient>, row: { appointment_id?: number; type: string }, nowIso: string) {
   if (!row.appointment_id) return
   if (row.type === 'appointment_created') {
@@ -69,6 +141,8 @@ Deno.serve(async (req) => {
 
   const now = new Date()
   const nowIso = now.toISOString()
+  await enqueuePaymentReminders(admin, now)
+  const whatsapp = createWhatsAppProvider()
   const { data: due, error } = await admin
     .from('notifications')
     .select('*')
@@ -106,14 +180,60 @@ Deno.serve(async (req) => {
     }
 
     if (row.channel === 'whatsapp') {
-      const next = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      const { data: connection } = await admin
+        .from('whatsapp_connections')
+        .select('status, provider_session_id')
+        .eq('user_id', row.user_id)
+        .maybeSingle()
+      if (!connection || connection.status !== 'connected' || !connection.provider_session_id) {
+        await holdWhatsapp(admin, row.id, 'no_connection')
+        held += 1
+        continue
+      }
+      const phone = await destinationPhone(admin, row)
+      const text = row.payload?.text || row.payload?.body || ''
+      const result = await whatsapp.sendText({
+        sessionId: connection.provider_session_id,
+        phone: phone || '',
+        text,
+      })
+      if (result.ok) {
+        const sentAt = new Date().toISOString()
+        await admin.from('notifications').update({
+          status: 'sent',
+          sent_at: sentAt,
+          provider: 'wa_akg',
+          provider_message_id: result.providerMessageId,
+          error_message: null,
+          updated_at: sentAt,
+        }).eq('id', row.id)
+        sent += 1
+        continue
+      }
+      if (result.error === 'no_phone') {
+        await admin.from('notifications').update({
+          status: 'failed',
+          error_message: 'no_phone',
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.id)
+        failed += 1
+        continue
+      }
+      if (!result.retry) {
+        await holdWhatsapp(admin, row.id, result.error || 'no_connection')
+        held += 1
+        continue
+      }
+      const decision = retryAfterFailure((row.attempts || 0) + 1, new Date())
       await admin.from('notifications').update({
-        status: 'pending',
-        error_message: 'no_connection',
-        next_attempt_at: next,
+        status: decision.status,
+        attempts: (row.attempts || 0) + 1,
+        next_attempt_at: decision.nextAttemptAt,
+        error_message: result.error || 'gateway_down',
         updated_at: new Date().toISOString(),
       }).eq('id', row.id)
-      held += 1
+      if (decision.status === 'failed') failed += 1
+      else held += 1
       continue
     }
 

@@ -17,6 +17,7 @@ export default function Servicos() {
   const [nome, setNome] = useState('')
   const [preco, setPreco] = useState('')
   const [duracao, setDuracao] = useState('60')
+  const [manutencao, setManutencao] = useState('')
 
   // Modal Confirmação
   const [modalOpen, setModalOpen] = useState(false)
@@ -93,18 +94,20 @@ export default function Servicos() {
         name: nome,
         default_price: parseFloat(preco.replace(',', '.')),
         duration_minutes: duracaoNum,
+        maintenance_days: manutencao ? Number(manutencao) : null,
         user_id: workspaceId(profile, user.id)
     }
 
     const { error } = await supabase.from('services').insert(novoServico)
 
     if (error) {
-        toast.error(error.message)
+        toast.error(/maintenance_days/i.test(error.message) ? 'Rode o SQL 032 no Supabase (retorno do serviço).' : error.message)
     } else {
         toast.success('Serviço salvo!')
         setNome('')
         setPreco('')
         setDuracao('60')
+        setManutencao('')
         fetchServicos()
     }
   }
@@ -159,6 +162,16 @@ export default function Servicos() {
                 </div>
             </div>
 
+            <div>
+                <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Retorno automático</label>
+                <select value={manutencao} onChange={e => setManutencao(e.target.value)} style={inputStyle}>
+                    <option value="">Sem aviso de retorno</option>
+                    <option value="15">Avisar a cliente em 15 dias</option>
+                    <option value="21">Avisar a cliente em 21 dias</option>
+                    <option value="30">Avisar a cliente em 30 dias</option>
+                </select>
+            </div>
+
             <button type="submit" style={btnSalvar}>
                 <Save size={20} style={{ marginRight: '10px' }} /> Salvar Serviço
             </button>
@@ -175,7 +188,7 @@ export default function Servicos() {
                 <div>
                     <strong style={{ fontSize: '16px', display: 'block' }}>{s.name}</strong>
                     <span style={{ fontSize: '14px', color: '#16a34a', fontWeight:'bold' }}>R$ {s.default_price.toFixed(2)}</span>
-                    <span style={{ fontSize: '12px', color: '#64748b' }}>{s.duration_minutes ?? 60} min</span>
+                    <span style={{ fontSize: '12px', color: '#64748b' }}>{s.duration_minutes ?? 60} min{s.maintenance_days ? ` · retorno ${s.maintenance_days}d` : ''}</span>
                 </div>
               </div>
               <button onClick={() => confirmarExclusao(s.id, s.name)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: '10px' }}>

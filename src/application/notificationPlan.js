@@ -1,3 +1,13 @@
+import {
+  msgCancelamento,
+  msgConfirmarHorario,
+  msgLembrete,
+  msgPedidoRecebido,
+  msgPosAtendimento,
+  msgRemarcado,
+  msgRetornoLembrete,
+} from '../utils/bookingMessages.js'
+
 export const RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000]
 
 const CHANNELS = ['push', 'whatsapp']
@@ -18,9 +28,9 @@ export function minuteInSaoPaulo(value) {
   return `${pick('year')}-${pick('month')}-${pick('day')}T${hour}:${pick('minute')}`
 }
 
-export function idempotencyKey({ workspaceId, appointmentId, clientId, type, channel, scheduledFor }) {
-  const subject = appointmentId ?? clientId ?? 'none'
-  return `${workspaceId}:${subject}:${type}:${channel}:${minuteInSaoPaulo(scheduledFor)}`
+export function idempotencyKey({ workspaceId, appointmentId, clientId, subject, type, channel, scheduledFor }) {
+  const who = subject ?? appointmentId ?? clientId ?? 'none'
+  return `${workspaceId}:${who}:${type}:${channel}:${minuteInSaoPaulo(scheduledFor)}`
 }
 
 export function retryAfterFailure(attemptsAfterThisTry, now = new Date()) {
@@ -47,8 +57,9 @@ function dueOrNow(when, now) {
   return when.getTime() < now.getTime() ? new Date(now) : when
 }
 
-function row({ appointment, type, when, title, body, status = 'pending' }) {
-  return CHANNELS.map((channel) => ({
+function row({ appointment, type, when, title, body, whatsappText, status = 'pending', channels = CHANNELS }) {
+  const phone = appointment.clients?.phone || null
+  return channels.map((channel) => ({
     user_id: appointment.user_id,
     appointment_id: appointment.id,
     client_id: appointment.client_id || null,
@@ -57,7 +68,13 @@ function row({ appointment, type, when, title, body, status = 'pending' }) {
     scheduled_for: when.toISOString(),
     status,
     next_attempt_at: when.toISOString(),
-    payload: { title, body, url: '/', text: `${title}\n${body}` },
+    payload: {
+      title,
+      body,
+      url: '/',
+      text: channel === 'whatsapp' ? (whatsappText || `${title}\n${body}`) : `${title}\n${body}`,
+      phone,
+    },
     idempotency_key: idempotencyKey({
       workspaceId: appointment.user_id,
       appointmentId: appointment.id,
@@ -72,6 +89,7 @@ export function planAppointmentNotifications({
   appointment,
   reminderHours = 24,
   remindersEnabled = true,
+  maintenanceDays = null,
   now = new Date(),
   rescheduled = false,
 }) {
@@ -79,6 +97,7 @@ export function planAppointmentNotifications({
   const nome = appointment.clients?.name || 'Cliente'
   const hora = horaSp(start)
   const reminderStatus = remindersEnabled ? 'pending' : 'cancelled'
+  const lembrete = msgLembrete(appointment)
 
   if (appointment.status === 'CANCELADO' || appointment.status === 'FALTOU') {
     return row({
@@ -87,17 +106,34 @@ export function planAppointmentNotifications({
       when: now,
       title: 'Horário cancelado',
       body: `${nome} às ${hora}.`,
+      whatsappText: msgCancelamento(appointment, appointment.status, appointment.cancellation_reason),
     })
   }
 
   if (appointment.status === 'CONCLUIDO') {
-    return row({
+    const done = row({
       appointment,
       type: 'appointment_completed',
       when: now,
       title: 'Atendimento concluído',
       body: `${nome} às ${hora}.`,
+      whatsappText: msgPosAtendimento(appointment),
     })
+    const days = Number(maintenanceDays)
+    if (![15, 21, 30].includes(days)) return done
+    const when = new Date(now.getTime() + days * 24 * 60 * 60 * 1000)
+    return [
+      ...done,
+      ...row({
+        appointment,
+        type: 'client_return_reminder',
+        when,
+        title: 'Retorno',
+        body: `${nome} em ${days} dias.`,
+        whatsappText: msgRetornoLembrete(nome, days),
+        channels: ['whatsapp'],
+      }),
+    ]
   }
 
   if (appointment.status === 'PENDENTE') {
@@ -107,6 +143,7 @@ export function planAppointmentNotifications({
       when: now,
       title: 'Nova solicitação',
       body: `${nome} pediu um horário.`,
+      whatsappText: msgPedidoRecebido(appointment),
     })
   }
 
@@ -118,6 +155,7 @@ export function planAppointmentNotifications({
       when: now,
       title: 'Horário remarcado',
       body: `${nome} às ${hora}.`,
+      whatsappText: msgRemarcado(appointment),
     })
     : row({
       appointment,
@@ -125,6 +163,7 @@ export function planAppointmentNotifications({
       when: now,
       title: 'Horário confirmado',
       body: `${nome} às ${hora}.`,
+      whatsappText: msgConfirmarHorario(appointment),
     })
 
   const far = dueOrNow(new Date(start.getTime() - hours * 60 * 60 * 1000), now)
@@ -138,6 +177,7 @@ export function planAppointmentNotifications({
       when: far,
       title: 'Lembrete de horário',
       body: `${nome} às ${hora}.`,
+      whatsappText: lembrete,
       status: reminderStatus,
     }),
     ...row({
@@ -146,6 +186,7 @@ export function planAppointmentNotifications({
       when: near,
       title: 'Lembrete de horário',
       body: `${nome} às ${hora}.`,
+      whatsappText: lembrete,
       status: reminderStatus,
     }),
   ]
