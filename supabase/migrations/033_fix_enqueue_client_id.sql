@@ -1,10 +1,9 @@
--- Textos da cliente, retorno do serviço e aviso da lista de espera.
--- Cole no SQL Editor depois da 031.
+-- Corrige o agendamento (client_id bigint na fila) e abre a carteira da etapa 7.
+-- Cole no SQL Editor depois da 032. Sem este arquivo, marcar horário responde 404:
+-- function enqueue_notification(uuid, bigint, bigint, ...) does not exist.
 
-ALTER TABLE services ADD COLUMN IF NOT EXISTS maintenance_days integer;
-ALTER TABLE services DROP CONSTRAINT IF EXISTS services_maintenance_days_check;
-ALTER TABLE services ADD CONSTRAINT services_maintenance_days_check
-  CHECK (maintenance_days IS NULL OR maintenance_days IN (15, 21, 30));
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS birthday date;
+ALTER TABLE loyalty_settings ADD COLUMN IF NOT EXISTS vip_min_amount numeric(10,2) DEFAULT 300;
 
 DROP TRIGGER IF EXISTS trg_appointment_notifications ON appointments;
 DROP FUNCTION IF EXISTS public.trg_appointment_notifications();

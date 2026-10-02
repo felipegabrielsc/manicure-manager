@@ -12,6 +12,16 @@ import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
 import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId } from '../utils/workspace'
+import { enqueueMany } from '../application/notificationService'
+import {
+  avisoDoSegmento,
+  carteiraDaCliente,
+  DEFAULT_VIP_MIN,
+  SEGMENTOS,
+  segmentosDaCliente,
+  textoFrequencia,
+  textoUltimaVisita,
+} from '../utils/clientPortfolio'
 
 export default function Clientes() {
   const { profile } = useSessionProfile()
@@ -33,6 +43,12 @@ export default function Clientes() {
   const [diaVencimento, setDiaVencimento] = useState('10')
   const [offsetVencimento, setOffsetVencimento] = useState('1')
   const [packageSize, setPackageSize] = useState(0)
+  const [aniversarioCliente, setAniversarioCliente] = useState('')
+  const [birthdayOk, setBirthdayOk] = useState(true)
+  const [segmento, setSegmento] = useState('')
+  const [vipMin, setVipMin] = useState(String(DEFAULT_VIP_MIN))
+  const [vipOk, setVipOk] = useState(true)
+  const [avisando, setAvisando] = useState(false)
 
   // Estados para Modal de Histórico
   const [clienteDetalheId, setClienteDetalheId] = useState(null)
@@ -93,32 +109,56 @@ export default function Clientes() {
     const { data: clientsData, error: errClients } = await supabase.from('clients').select('*').order('name')
     if (errClients) { toast.error('Erro ao carregar clientes'); setLoading(false); return; }
 
-    const { data: loyalty } = await supabase.from('loyalty_settings').select('visits_required, reward_description, active').maybeSingle()
-    setLoyaltySettings(loyalty)
-
-    let query = supabase.from('appointments').select('id, client_id, agreed_price, start_time, payment_method, services(name)').eq('status', 'CONCLUIDO')
-
-    let txQuery = supabase
-      .from('transactions')
-      .select('id, client_id, description, amount, date, payment_method, category, type')
-      .eq('type', 'RECEITA')
-      .not('client_id', 'is', null)
-
-    if (filtroPeriodo === 'MES') {
-        const { start, end, startDay, endDay } = monthRangeLocal(new Date())
-        query = query.gte('start_time', start.toISOString()).lte('start_time', end.toISOString())
-        txQuery = txQuery.gte('date', startDay).lte('date', `${endDay}T23:59:59`)
+    let loyaltyQuery = await supabase.from('loyalty_settings').select('visits_required, reward_description, active, vip_min_amount').maybeSingle()
+    if (loyaltyQuery.error?.message?.includes('vip_min_amount')) {
+      setVipOk(false)
+      loyaltyQuery = await supabase.from('loyalty_settings').select('visits_required, reward_description, active').maybeSingle()
+    } else {
+      setVipOk(true)
+      if (loyaltyQuery.data?.vip_min_amount != null) setVipMin(String(loyaltyQuery.data.vip_min_amount))
     }
+    setLoyaltySettings(loyaltyQuery.data)
 
-    const [{ data: appointmentsData }, { data: transacoesData }, { data: pendentesData }] = await Promise.all([
-      query,
-      txQuery,
-      supabase.from('appointments').select('id, client_id, agreed_price').in('status', ['PENDENTE', 'AGENDADO']),
+    const aniversarioProbe = await supabase.from('clients').select('birthday').limit(1)
+    setBirthdayOk(!aniversarioProbe.error)
+
+    let servicos = []
+    const srv = await supabase.from('services').select('id, maintenance_days')
+    if (srv.error) {
+      const retry = await supabase.from('services').select('id')
+      servicos = retry.data || []
+    } else {
+      servicos = srv.data || []
+    }
+    const manutencao = Object.fromEntries(servicos.map((s) => [s.id, s.maintenance_days || null]))
+
+    const [{ data: appointmentsData }, { data: transacoesData }] = await Promise.all([
+      supabase.from('appointments').select('id, client_id, agreed_price, start_time, payment_method, status, service_id, services(name)'),
+      supabase.from('transactions').select('id, client_id, description, amount, date, payment_method, category, type').eq('type', 'RECEITA').not('client_id', 'is', null),
     ])
 
+    const todos = appointmentsData || []
+    const compras = transacoesData || []
+    const periodo = filtroPeriodo === 'MES' ? monthRangeLocal(new Date()) : null
+    const noMes = (valor, tipo) => {
+      if (!periodo) return true
+      if (tipo === 'dia') {
+        const day = String(valor || '').slice(0, 10)
+        return day >= periodo.startDay && day <= periodo.endDay
+      }
+      const time = new Date(valor).getTime()
+      return time >= periodo.start.getTime() && time <= periodo.end.getTime()
+    }
+
     const clientesComGasto = clientsData.map(cliente => {
-        const servicos = (appointmentsData || [])
-          .filter(app => app.client_id === cliente.id)
+        const doCliente = todos.filter(app => app.client_id == cliente.id).map(app => ({
+          ...app,
+          services: { name: app.services?.name, maintenance_days: manutencao[app.service_id] || null },
+        }))
+        const comprasCliente = compras.filter(t => t.client_id == cliente.id)
+        const carteira = carteiraDaCliente({ cliente, atendimentos: doCliente, compras: comprasCliente })
+        const servicos = doCliente
+          .filter(app => app.status === 'CONCLUIDO' && noMes(app.start_time))
           .map(app => ({
             id: `apt-${app.id}`,
             tipo: 'servico',
@@ -128,8 +168,8 @@ export default function Clientes() {
             payment_method: app.payment_method,
             category: 'servico',
           }))
-        const compras = (transacoesData || [])
-          .filter(t => t.client_id === cliente.id)
+        const comprasPeriodo = comprasCliente
+          .filter(t => noMes(t.date, 'dia'))
           .map(t => ({
             id: `tx-${t.id}`,
             tipo: 'compra',
@@ -139,13 +179,13 @@ export default function Clientes() {
             payment_method: t.payment_method,
             category: t.category,
           }))
-        const historico = [...servicos, ...compras].sort((a, b) => String(b.date).localeCompare(String(a.date)))
+        const historico = [...servicos, ...comprasPeriodo].sort((a, b) => String(b.date).localeCompare(String(a.date)))
         const totalGasto = historico.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
-        const aReceber = (pendentesData || [])
-          .filter(app => app.client_id == cliente.id)
+        const aReceber = doCliente
+          .filter(app => app.status === 'PENDENTE' || app.status === 'AGENDADO')
           .reduce((acc, app) => acc + (Number(app.agreed_price) || 0), 0)
 
-        return { ...cliente, totalGasto, historico, aReceber }
+        return { ...cliente, totalGasto, historico, aReceber, carteira }
     })
 
     clientesComGasto.sort((a, b) => b.totalGasto - a.totalGasto)
@@ -169,6 +209,7 @@ export default function Clientes() {
       dados.monthly_due_offset = offsetVencimento === '0' ? 0 : 1
     }
     dados.package_size = Number(packageSize) || 0
+    if (birthdayOk) dados.birthday = aniversarioCliente || null
     if (!idEdicao) dados.package_used = 0
 
     let error
@@ -182,7 +223,7 @@ export default function Clientes() {
 
     if (error) {
       const m = error.message || ''
-      toast.error(m.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote de visitas).' : m.includes('monthly_') ? 'Rode o SQL 007 no Supabase (vencimento da mensalidade).' : (m || 'Erro ao salvar'))
+      toast.error(m.includes('birthday') ? 'Rode o SQL 033 no Supabase (aniversário).' : m.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote de visitas).' : m.includes('monthly_') ? 'Rode o SQL 007 no Supabase (vencimento da mensalidade).' : (m || 'Erro ao salvar'))
     }
     else {
         toast.success('Cliente salva!')
@@ -236,6 +277,7 @@ export default function Clientes() {
       setDiaVencimento(String(c.monthly_due_day || 10))
       setOffsetVencimento(c.monthly_due_offset == null ? '1' : String(c.monthly_due_offset))
       setPackageSize(Number(c.package_size) || 0)
+      setAniversarioCliente(c.birthday ? String(c.birthday).slice(0, 10) : '')
       setModalAberto(true)
   }
 
@@ -248,21 +290,73 @@ export default function Clientes() {
     setDiaVencimento('10')
     setOffsetVencimento('1')
     setPackageSize(0)
+    setAniversarioCliente('')
+  }
+
+  const agora = new Date()
+  const minimoVip = Number(String(vipMin).replace(',', '.'))
+  const maxGasto = clientes.reduce((max, c) => Math.max(max, c.carteira?.faturado || 0), 0)
+  const comSegmentos = clientes.map(c => ({
+    ...c,
+    segmentos: c.carteira ? segmentosDaCliente(c.carteira, {
+      cliente: c,
+      now: agora,
+      vipMin: Number.isFinite(minimoVip) ? minimoVip : DEFAULT_VIP_MIN,
+      isTop: maxGasto > 0 && c.carteira.faturado === maxGasto,
+    }) : [],
+  }))
+  const contagemSegmento = Object.fromEntries(SEGMENTOS.map(s => [s.id, comSegmentos.filter(c => c.segmentos.includes(s.id)).length]))
+
+  async function salvarVipMin() {
+    if (!vipOk) return toast.error('Rode o SQL 033 no Supabase para configurar o VIP.')
+    const user = (await supabase.auth.getUser()).data.user
+    const amount = Number(String(vipMin).replace(',', '.'))
+    if (!Number.isFinite(amount) || amount < 0) return toast.error('Informe um valor mínimo.')
+    const { error } = await supabase.from('loyalty_settings').upsert({
+      user_id: workspaceId(profile, user?.id),
+      vip_min_amount: amount,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+    if (error) toast.error(error.message?.includes('vip_min_amount') ? 'Rode o SQL 033 no Supabase (mínimo VIP).' : (error.message || 'Erro ao salvar'))
+    else toast.success('Mínimo VIP salvo')
+  }
+
+  async function avisarSegmento() {
+    const alvo = SEGMENTOS.find(s => s.id === segmento)
+    if (!alvo) return
+    const grupo = filtrarLista.filter(c => c.phone)
+    if (!grupo.length) return toast.error('Nenhuma cliente deste grupo tem WhatsApp.')
+    setAvisando(true)
+    const user = (await supabase.auth.getUser()).data.user
+    const now = new Date()
+    const rows = grupo
+      .map(c => avisoDoSegmento({ workspaceId: workspaceId(profile, user?.id), cliente: c, segmentoId: segmento, now }))
+      .filter(Boolean)
+    const queued = await enqueueMany(supabase, rows)
+    setAvisando(false)
+    if (!queued.ok) {
+      const m = queued.error || ''
+      toast.error(m.includes('notifications') || m.includes('schema') ? 'Rode o SQL 030 no Supabase para criar a fila.' : (m || 'Não entrou na fila'))
+      return
+    }
+    toast.success(`${rows.length} aviso(s) na fila, ainda sem enviar.`)
   }
 
   const itensFiltradosDe = (historico) => (historico || []).filter(item => passaFiltroItem(item, filtroTipo, filtroPagamento))
 
-  const filtrarLista = clientes.filter(c => {
-    if (clienteFocoId && c.id !== clienteFocoId) return false
+  const filtrarLista = comSegmentos.filter(c => {
+    if (clienteFocoId && String(c.id) !== String(clienteFocoId)) return false
     if (!c.name.toLowerCase().includes(busca.toLowerCase())) return false
+    if (segmento && !c.segmentos.includes(segmento)) return false
     const itens = itensFiltradosDe(c.historico)
     const filtroEstreito = filtroTipo !== 'TODOS' || filtroPagamento !== 'TODOS'
     if (!clienteFocoId && filtroEstreito && itens.length === 0) return false
     return true
   })
 
-  const clientesPorNome = [...clientes].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
-  const clienteDetalhe = clientes.find(c => c.id === clienteDetalheId)
+  const clientesPorNome = [...comSegmentos].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
+  const clienteDetalhe = comSegmentos.find(c => String(c.id) === String(clienteDetalheId))
+  const segmentoAtivo = SEGMENTOS.find(s => s.id === segmento)
   const historicoDetalhe = clienteDetalhe ? itensFiltradosDe(clienteDetalhe.historico) : []
 
   const escolherClienteFoco = (id) => {
@@ -356,6 +450,28 @@ export default function Clientes() {
                 </button>
               ))}
             </div>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {SEGMENTOS.map(seg => (
+                <button key={seg.id} type="button" onClick={() => setSegmento(segmento === seg.id ? '' : seg.id)} style={chipFiltro(segmento === seg.id)}>
+                  {seg.label} ({contagemSegmento[seg.id] || 0})
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <label style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', flexShrink: 0 }}>VIP a partir de R$</label>
+              <input
+                value={vipMin}
+                onChange={e => setVipMin(e.target.value)}
+                onBlur={salvarVipMin}
+                inputMode="decimal"
+                style={{ width: '90px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+              />
+            </div>
+            {segmentoAtivo && (
+              <button type="button" onClick={avisarSegmento} disabled={avisando} style={{ padding: '10px 12px', borderRadius: '8px', border: 'none', background: '#16a34a', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>
+                {avisando ? 'Enfileirando...' : `Avisar ${segmentoAtivo.label.toLowerCase()} (${filtrarLista.filter(c => c.phone).length})`}
+              </button>
+            )}
         </div>
 
         {/* LISTA (COM ID) */}
@@ -394,6 +510,13 @@ export default function Clientes() {
                                 {(cliente.loyalty_visits > 0) && (
                                   <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 'bold' }}>★ {cliente.loyalty_visits} visitas</span>
                                 )}
+                                {cliente.carteira && (
+                                  <span style={{ display: 'block', fontSize: '11px', color: '#475569' }}>
+                                    {textoUltimaVisita(cliente.carteira)} · {textoFrequencia(cliente.carteira)}
+                                    {cliente.carteira.faltas > 0 ? ` · ${cliente.carteira.faltas} falta(s)` : ''}
+                                    {cliente.carteira.cancelamentos > 0 ? ` · ${cliente.carteira.cancelamentos} cancel.` : ''}
+                                  </span>
+                                )}
                             </div>
                         </div>
 
@@ -423,6 +546,7 @@ export default function Clientes() {
           onFiltroTipo={setFiltroTipo}
           onFiltroPagamento={setFiltroPagamento}
           loyaltySettings={loyaltySettings}
+          carteira={clienteDetalhe.carteira}
           onClose={() => setClienteDetalheId(null)}
           onEdit={() => { const c = clienteDetalhe; setClienteDetalheId(null); abrirEdicao(c, { stopPropagation: () => {} }) }}
           onDelete={() => confirmarExclusao(clienteDetalhe.id)}
@@ -443,6 +567,12 @@ export default function Clientes() {
                          <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>WhatsApp</label>
                          <input required value={phoneCliente} onChange={e => setPhoneCliente(formatarTelefone(e.target.value))} style={inputStyle} placeholder="(00) 00000-0000" maxLength={15}/>
                      </div>
+                     {birthdayOk && (
+                       <div style={{marginBottom:'15px'}}>
+                         <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Aniversário</label>
+                         <input type="date" value={aniversarioCliente} onChange={e => setAniversarioCliente(e.target.value)} style={inputStyle} />
+                       </div>
+                     )}
                      <div style={{marginBottom:'15px'}}>
                          <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>Tipo</label>
                          <div style={{display:'flex', gap:'8px'}}>

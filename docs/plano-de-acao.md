@@ -1,6 +1,6 @@
 # Plano de ação — Manicure Manager
 
-Etapas 1 a 6 estão no código. Cole as migrations `029` a `032` no SQL Editor antes do deploy. O envio de WhatsApp fica desligado até existirem `WA_AKG_URL`, `WA_AKG_API_KEY` e `WHATSAPP_WEBHOOK_SECRET` nos secrets da Edge Function. As etapas 7 a 9 ainda não começaram.
+Etapas 1 a 7 estão no código. Cole as migrations `029` a `033` no SQL Editor antes do deploy. A `033` é obrigatória se a `032` já foi aplicada: sem ela, marcar horário responde 404 porque `enqueue_notification` foi criada com `client_id` uuid e o banco usa bigint. O envio de WhatsApp fica desligado até existirem `WA_AKG_URL`, `WA_AKG_API_KEY` e `WHATSAPP_WEBHOOK_SECRET` nos secrets da Edge Function. As etapas 8 e 9 ainda não começaram.
 
 Objetivo: o salão continua funcionando se o WhatsApp cair, e o WhatsApp passa a confirmar, lembrar, avisar cancelamento e pedir retorno sem depender do navegador aberto.
 

@@ -25,6 +25,14 @@ export async function enqueue(supabase, row) {
   return { ok: !error, error: error?.message }
 }
 
+export async function enqueueMany(supabase, rows) {
+  if (!rows?.length) return { ok: true, count: 0 }
+  const { error } = await supabase
+    .from('notifications')
+    .upsert(rows, { onConflict: 'idempotency_key', ignoreDuplicates: true })
+  return { ok: !error, error: error?.message, count: rows.length }
+}
+
 export async function cancelPending(supabase, { appointmentId, types } = {}) {
   let query = supabase
     .from('notifications')

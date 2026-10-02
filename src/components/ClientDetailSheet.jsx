@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { CheckCircle2, DollarSign, TrendingUp, Clock, Gift, X, Edit2, Trash2, ChevronDown } from 'lucide-react'
 import { money } from '../utils/dates'
-import { formatLongPt, summarizeClient } from '../utils/clientInsights'
+import { formatLongPt, moneyBr, summarizeClient } from '../utils/clientInsights'
+import { textoFrequencia, textoUltimaVisita } from '../utils/clientPortfolio'
 import { labelPagamento } from './pagamentoLabels'
 
 export default function ClientDetailSheet({
@@ -13,6 +14,7 @@ export default function ClientDetailSheet({
   onFiltroTipo,
   onFiltroPagamento,
   loyaltySettings,
+  carteira,
   onClose,
   onEdit,
   onDelete,
@@ -52,6 +54,14 @@ export default function ClientDetailSheet({
           <Kpi icon={<TrendingUp size={16} color="#db2777" />} label="Ticket médio" value={`R$ ${money(summary.ticket)}`} />
           <Kpi icon={<Clock size={16} color="#d97706" />} label="A receber" value={`R$ ${money(summary.aReceber)}`} accent={summary.aReceber ? '#b45309' : undefined} />
         </div>
+
+        {carteira && (
+          <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#334155', background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '10px 12px' }}>
+            Carteira: {textoUltimaVisita(carteira)} · {textoFrequencia(carteira)} · {moneyBr(carteira.faturado)} · ticket {moneyBr(carteira.ticket)}
+            {carteira.faltas > 0 ? ` · ${carteira.faltas} falta(s)` : ''}
+            {carteira.cancelamentos > 0 ? ` · ${carteira.cancelamentos} cancelamento(s)` : ''}
+          </p>
+        )}
 
         {summary.favorito && (
           <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#475569' }}>
