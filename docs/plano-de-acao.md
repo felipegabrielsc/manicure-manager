@@ -1,6 +1,6 @@
 # Plano de ação — Manicure Manager
 
-Etapas 1 e 2 estão no código. A migration `029_workspace_followup_portfolio.sql` precisa ser colada no SQL Editor do Supabase antes do deploy. As etapas 3 a 9 ainda não começaram.
+Etapas 1 a 4 estão no código. As migrations `029_workspace_followup_portfolio.sql` e `030_notifications.sql` precisam ser coladas no SQL Editor do Supabase antes do deploy. O worker `notification-dispatch` e o `push-dispatch` atualizado entram no mesmo cron (`CRON_SECRET`). As etapas 5 a 9 ainda não começaram.
 
 Objetivo: o salão continua funcionando se o WhatsApp cair, e o WhatsApp passa a confirmar, lembrar, avisar cancelamento e pedir retorno sem depender do navegador aberto.
 
@@ -134,7 +134,7 @@ Tipos desta etapa: `appointment_created`, `appointment_confirmed`, `appointment_
 
 RLS com `workspace_id()`. O worker usa service role e não depende da sessão da manicure.
 
-Retry: tentativa imediata, depois 30s, 2min e 10min. Na quinta falha, `failed` e `error_message`.
+Retry: tentativa imediata, depois 30s, 2min e 10min. Na quarta falha, `failed` e `error_message`. WhatsApp sem conexão não entra nesse retry: fica `pending` com `no_connection`.
 
 ### Código
 

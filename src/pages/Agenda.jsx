@@ -7,24 +7,33 @@ import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
-import { getWeekDays, fetchWeekAppointments, fetchSchedulingContext, validateBookingSlot, getServiceDuration } from '../utils/scheduling'
-import { incrementLoyaltyVisit } from '../utils/loyalty'
+import { getWeekDays, fetchWeekAppointments } from '../utils/scheduling'
 import { openSupportWhatsApp } from '../config/app'
 import { openWhatsApp } from '../utils/whatsapp'
 import {
   nomeServico,
   valorServico,
   motivoVisivel,
-  msgConfirmarHorario,
-  msgRecusarHorario,
-  msgLembrete,
   msgZapAgenda,
   msgRecibo,
-  msgRetornoLembrete,
 } from '../utils/bookingMessages'
-import { toDateInputValue } from '../utils/dates'
 import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId } from '../utils/workspace'
+import { toDateInputValue } from '../utils/dates'
+import {
+  avisarEspera,
+  confirmarPedido,
+  concluirAtendimento,
+  enviarLembrete,
+  excluirAgendamento,
+  marcarAusencia,
+  marcarRetorno,
+  marcarRetornoEnviado,
+  reabrirAtendimento,
+  recusarPedido,
+  registrarLembreteRetorno,
+  remarcar,
+} from '../application/appointmentService'
 
 export default function Agenda() {
   const { profile } = useSessionProfile()
@@ -114,24 +123,16 @@ export default function Agenda() {
     setRetornos(data || [])
   }
 
-  async function avisarEspera(item) {
-    const link = `${window.location.origin}/agendar/${userId}`
-    const ok = openWhatsApp(item.phone, `Oi ${item.name}! Abriu um horário na agenda${item.services?.name ? ` para ${item.services.name}` : ''}. Pode marcar aqui: ${link}`)
-    if (!ok) return toast.error('Sem WhatsApp nesta espera')
-    await supabase.from('waitlist').update({ status: 'AVISADA', notified_at: new Date().toISOString() }).eq('id', item.id)
+  async function avisarItemEspera(item) {
+    const result = await avisarEspera(supabase, { item, workspaceId: userId, origin: window.location.origin })
+    if (!result.ok) return toast.error(result.error)
     toast.success('Aviso enviado')
     carregarEspera()
   }
 
-  async function enviarLembrete(agendamento) {
-    const tel = agendamento.clients?.phone?.replace(/\D/g, '')
-    if (!tel) return toast.error('Cliente sem telefone')
-
-    const link = `${window.location.origin}/resumo/${agendamento.id}`
-    const msg = msgLembrete(agendamento, link)
-    window.open(`https://wa.me/${tel.startsWith('55') ? tel : `55${tel}`}?text=${encodeURIComponent(msg)}`, '_blank')
-
-    await supabase.from('appointments').update({ reminder_sent_at: new Date().toISOString() }).eq('id', agendamento.id)
+  async function enviarLembreteAgenda(agendamento) {
+    const result = await enviarLembrete(supabase, agendamento, window.location.origin)
+    if (!result.ok) return toast.error(result.error)
     toast.success('Lembrete enviado!')
     carregarLembretes()
   }
@@ -173,7 +174,7 @@ export default function Agenda() {
   const handleToggleClick = (agendamento) => {
     if (agendamento.status === 'FALTOU' || agendamento.status === 'CANCELADO') return
     if (agendamento.status === 'CONCLUIDO') {
-      toggleStatus(agendamento.id, 'CONCLUIDO', null)
+      reabrir(agendamento)
     } else {
       setIdParaConcluir(agendamento.id)
       setPagamentoModalOpen(true)
@@ -181,53 +182,26 @@ export default function Agenda() {
   }
 
   const confirmarPagamento = async (metodo) => {
-    if (metodo === 'PACOTE') {
-      const apt = agendamentos.find(a => a.id === idParaConcluir)
-      if (!apt?.client_id) return toast.error('Cliente não encontrada')
-      const { data: cli } = await supabase.from('clients').select('package_size, package_used').eq('id', apt.client_id).single()
-      const size = Number(cli?.package_size) || 0
-      const used = Number(cli?.package_used) || 0
-      if (size < 1 || used >= size) return toast.error('Essa cliente não tem visita no pacote. Cadastre 4 ou 6 no perfil dela.')
-      const { error: pkgErr } = await supabase.from('clients').update({ package_used: used + 1 }).eq('id', apt.client_id)
-      if (pkgErr) return toast.error(pkgErr.message.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote).' : pkgErr.message)
+    const apt = agendamentos.find(a => a.id === idParaConcluir)
+    if (!apt) return
+    const result = await concluirAtendimento(supabase, { agendamento: apt, metodo })
+    if (!result.ok) return toast.error(result.error)
+    if (result.avisoMensalidade) {
+      toast('Essa visita vai para a mensalidade. Cobra no vencimento (padrão: dia 10 do mês seguinte).', { icon: '📅' })
     }
-    await toggleStatus(idParaConcluir, 'AGENDADO', metodo)
-    if (metodo === 'MENSALIDADE') {
-      const apt = agendamentos.find(a => a.id === idParaConcluir)
-      if (apt?.client_id) {
-        const { data: cli } = await supabase.from('clients').select('monthly_due_day, monthly_due_offset, type').eq('id', apt.client_id).single()
-        await supabase.from('clients').update({ type: 'MENSALISTA' }).eq('id', apt.client_id)
-        const extra = {}
-        if (cli?.monthly_due_day == null) extra.monthly_due_day = 10
-        if (cli?.monthly_due_offset == null) extra.monthly_due_offset = 1
-        if (Object.keys(extra).length) {
-          await supabase.from('clients').update(extra).eq('id', apt.client_id)
-        }
-        toast('Essa visita vai para a mensalidade. Cobra no vencimento (padrão: dia 10 do mês seguinte).', { icon: '📅' })
-      }
-    }
-    const aptDone = agendamentos.find(a => a.id === idParaConcluir)
+    setAgendamentos(prev => prev.map(item => item.id === apt.id ? { ...item, status: 'CONCLUIDO', payment_method: metodo } : item))
+    toast.success('Recebido!', { icon: '💰' })
     setPagamentoModalOpen(false)
     setIdParaConcluir(null)
-    if (aptDone) {
-      setAptRetorno({ ...aptDone, payment_method: metodo })
-      setRetornoAberto(true)
-    }
+    setAptRetorno({ ...apt, payment_method: metodo })
+    setRetornoAberto(true)
   }
 
-  async function toggleStatus(id, currentStatus, metodoPagamento) {
-    const novoStatus = currentStatus === 'CONCLUIDO' ? 'AGENDADO' : 'CONCLUIDO'
-    const updateData = { status: novoStatus, payment_method: novoStatus === 'CONCLUIDO' ? metodoPagamento : null }
-    const { error } = await supabase.from('appointments').update(updateData).eq('id', id)
-    if (!error) {
-      if (novoStatus === 'CONCLUIDO') {
-        const apt = agendamentos.find(a => a.id === id)
-        await incrementLoyaltyVisit(supabase, apt?.client_id)
-      }
-      setAgendamentos(prev => prev.map(item => item.id === id ? { ...item, status: novoStatus, payment_method: updateData.payment_method } : item))
-      if (novoStatus === 'CONCLUIDO') toast.success(`Recebido!`, { icon: '💰' })
-      else toast('Reaberto', { icon: '↩️' })
-    }
+  async function reabrir(agendamento) {
+    const result = await reabrirAtendimento(supabase, agendamento)
+    if (!result.ok) return toast.error(result.error)
+    setAgendamentos(prev => prev.map(item => item.id === agendamento.id ? { ...item, status: 'AGENDADO', payment_method: null } : item))
+    toast('Reaberto', { icon: '↩️' })
   }
 
   const abrirOpcoes = (agendamento) => {
@@ -242,99 +216,54 @@ export default function Agenda() {
 
   const deletarAgendamento = async () => {
     if (!agendamentoSelecionado) return
-    const { error } = await supabase.from('appointments').delete().eq('id', agendamentoSelecionado.id)
-    if (!error) { buscarAgendamentos(); fecharOpcoes(); setAlertModal({ isOpen: false }); toast.success('Excluído') }
-    else { toast.error('Erro ao excluir') }
+    const result = await excluirAgendamento(supabase, agendamentoSelecionado.id)
+    if (result.ok) { buscarAgendamentos(); fecharOpcoes(); setAlertModal({ isOpen: false }); toast.success('Excluído') }
+    else { toast.error(result.error) }
   }
 
   const salvarNovaData = async () => {
     if (!agendamentoSelecionado || !novaDataHora || !userId) return
-    const startTime = new Date(novaDataHora)
-    const durationMinutes = getServiceDuration(agendamentoSelecionado.services)
-
-    const ctx = await fetchSchedulingContext(supabase, userId, startTime, agendamentoSelecionado.id)
-    const validation = validateBookingSlot({
-      startTime,
-      durationMinutes,
-      businessHours: ctx.businessHours,
-      appointments: ctx.appointments,
-      blockedSlots: ctx.blockedSlots,
-      excludeAppointmentId: agendamentoSelecionado.id,
+    const result = await remarcar(supabase, {
+      agendamento: agendamentoSelecionado,
+      workspaceId: userId,
+      startTime: new Date(novaDataHora),
       staffId: staffEditId || null,
     })
-
-    if (!validation.valid) return toast.error(validation.reason)
-
-    const { error } = await supabase.from('appointments').update({
-      start_time: startTime.toISOString(),
-      staff_id: staffEditId || null,
-    }).eq('id', agendamentoSelecionado.id)
-    if (!error) { buscarAgendamentos(); carregarSemana(); fecharOpcoes(); toast.success('Remarcado!') }
-    else { toast.error('Erro ao remarcar') }
+    if (result.ok) { buscarAgendamentos(); carregarSemana(); fecharOpcoes(); toast.success('Remarcado!') }
+    else { toast.error(result.error || 'Erro ao remarcar') }
   }
 
   const marcarStatusComMotivo = async () => {
     if (!agendamentoSelecionado) return
-    const status = motivoTipo
-    const { error } = await supabase.from('appointments').update({
-      status,
-      cancellation_reason: motivoTexto.trim() || null,
-    }).eq('id', agendamentoSelecionado.id)
-    if (!error) {
-      toast(status === 'FALTOU' ? 'Falta registrada' : 'Cancelado', { icon: status === 'FALTOU' ? '🚫' : '↩️' })
-      const tel = agendamentoSelecionado.clients?.phone
-      if (tel) {
-        openWhatsApp(tel, `Oi ${agendamentoSelecionado.clients?.name}, seu horário foi ${status === 'FALTOU' ? 'marcado como falta' : 'cancelado'}${motivoTexto.trim() ? `: ${motivoTexto.trim()}` : ''}.`)
-      }
-      buscarAgendamentos()
-      fecharOpcoes()
-      setMotivoOpen(false)
-      setMotivoTexto('')
-      setAlertModal({ isOpen: false })
-    } else {
-      toast.error('Não foi possível atualizar')
-    }
+    const result = await marcarAusencia(supabase, {
+      agendamento: agendamentoSelecionado,
+      status: motivoTipo,
+      motivo: motivoTexto,
+    })
+    if (!result.ok) return toast.error(result.error)
+    toast(motivoTipo === 'FALTOU' ? 'Falta registrada' : 'Cancelado', { icon: motivoTipo === 'FALTOU' ? '🚫' : '↩️' })
+    buscarAgendamentos()
+    fecharOpcoes()
+    setMotivoOpen(false)
+    setMotivoTexto('')
+    setAlertModal({ isOpen: false })
   }
 
-  const marcarRetorno = async (dias) => {
+  const agendarRetorno = async (dias) => {
     if (!aptRetorno || !userId) return
-    const start = new Date(aptRetorno.start_time)
-    start.setDate(start.getDate() + dias)
-    const { error } = await supabase.from('appointments').insert({
-      client_id: aptRetorno.client_id,
-      service_id: aptRetorno.service_id,
-      start_time: start.toISOString(),
-      agreed_price: aptRetorno.agreed_price,
-      status: 'AGENDADO',
-      user_id: userId,
-      staff_id: aptRetorno.staff_id || null,
-    })
-    if (error) toast.error(error.message)
-    else {
-      toast.success(`Retorno em ${dias} dias marcado`)
-      const tel = aptRetorno.clients?.phone
-      if (tel) {
-        openWhatsApp(tel, `Oi ${aptRetorno.clients?.name}! Já deixei seu retorno: ${start.toLocaleDateString('pt-BR')} às ${start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}.`)
-      }
-      buscarAgendamentos()
-      carregarSemana()
-    }
+    const result = await marcarRetorno(supabase, { agendamento: aptRetorno, workspaceId: userId, dias })
+    if (!result.ok) return toast.error(result.error)
+    toast.success(`Retorno em ${dias} dias marcado`)
+    buscarAgendamentos()
+    carregarSemana()
     setRetornoAberto(false)
     setAptRetorno(null)
   }
 
   async function lembrarRetornoZap() {
     if (!aptRetorno || !userId) return
-    const d = new Date()
-    d.setDate(d.getDate() + 15)
-    const { error } = await supabase.from('followup_reminders').insert({
-      user_id: userId,
-      client_id: aptRetorno.client_id,
-      phone: aptRetorno.clients?.phone || null,
-      client_name: aptRetorno.clients?.name || null,
-      remind_on: toDateInputValue(d),
-    })
-    if (error) return toast.error(error.message.includes('followup') ? 'Rode o SQL 028 no Supabase (retorno).' : error.message)
+    const result = await registrarLembreteRetorno(supabase, { agendamento: aptRetorno, workspaceId: userId })
+    if (!result.ok) return toast.error(result.error)
     toast.success('Vou te lembrar daqui a 15 dias para mandar o Zap')
     setRetornoAberto(false)
     setAptRetorno(null)
@@ -397,7 +326,7 @@ export default function Agenda() {
             <p style={{ color: '#64748b', fontSize: '14px' }}>{aptRetorno.clients?.name} no mesmo horário daqui a:</p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {[15, 21, 30].map(d => (
-                <button key={d} onClick={() => marcarRetorno(d)} style={{ ...btnPagamento, flex: 1 }}> {d} dias</button>
+                <button key={d} onClick={() => agendarRetorno(d)} style={{ ...btnPagamento, flex: 1 }}> {d} dias</button>
               ))}
             </div>
             <button type="button" onClick={lembrarRetornoZap} style={{ width: '100%', padding: '12px', marginTop: '10px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' }}>
@@ -545,7 +474,7 @@ export default function Agenda() {
             {lembretesPendentes.slice(0, 3).map(l => (
               <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #fde68a', fontSize: '13px' }}>
                 <span>{l.clients?.name} · {new Date(l.start_time).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                <button onClick={() => enviarLembrete(l)} style={{ background: '#25D366', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>WhatsApp</button>
+                <button onClick={() => enviarLembreteAgenda(l)} style={{ background: '#25D366', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>WhatsApp</button>
               </div>
             ))}
           </div>
@@ -562,9 +491,8 @@ export default function Agenda() {
                 <button
                   type="button"
                   onClick={async () => {
-                    const ok = openWhatsApp(item.phone, msgRetornoLembrete(item.client_name || ''))
-                    if (!ok) return toast.error('Sem WhatsApp neste lembrete')
-                    await supabase.from('followup_reminders').update({ sent_at: new Date().toISOString() }).eq('id', item.id)
+                    const result = await marcarRetornoEnviado(supabase, item)
+                    if (!result.ok) return toast.error(result.error)
                     carregarRetornos()
                   }}
                   style={{ background: '#25D366', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -584,7 +512,7 @@ export default function Agenda() {
             {espera.slice(0, 5).map(item => (
               <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', fontSize: '13px', borderTop: '1px solid #dbeafe' }}>
                 <span>{item.name} · {item.services?.name || 'Serviço'}{item.preferred_date ? ` · ${new Date(`${item.preferred_date}T12:00:00`).toLocaleDateString('pt-BR')}` : ''}</span>
-                <button onClick={() => avisarEspera(item)} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontWeight: 'bold', cursor: 'pointer' }}>Avisar</button>
+                <button onClick={() => avisarItemEspera(item)} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', padding: '6px 10px', fontWeight: 'bold', cursor: 'pointer' }}>Avisar</button>
               </div>
             ))}
           </div>
@@ -668,27 +596,20 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
 
   const aprovarAgendamento = async (e) => {
     e.stopPropagation()
-    const { error } = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
-    if (!error) {
-      toast.success('Confirmado!', { icon: '✅' })
-      openWhatsApp(agendamento.clients?.phone, msgConfirmarHorario(agendamento))
-      onRefresh?.()
-    }
+    const result = await confirmarPedido(supabase, agendamento)
+    if (!result.ok) return toast.error(result.error)
+    toast.success('Confirmado!', { icon: '✅' })
+    onRefresh?.()
   }
 
   const recusarAgendamento = async (e) => {
     e.stopPropagation()
-    const motivo = window.prompt('Motivo do recuso (opcional):', '') 
+    const motivo = window.prompt('Motivo do recuso (opcional):', '')
     if (motivo === null) return
-    const { error } = await supabase.from('appointments').update({
-      status: 'CANCELADO',
-      cancellation_reason: motivo || 'Recusado',
-    }).eq('id', agendamento.id)
-    if (!error) {
-      toast('Pedido recusado', { icon: '🗑️' })
-      openWhatsApp(agendamento.clients?.phone, msgRecusarHorario(agendamento, motivo))
-      onRefresh?.()
-    }
+    const result = await recusarPedido(supabase, agendamento, motivo)
+    if (!result.ok) return toast.error(result.error)
+    toast('Pedido recusado', { icon: '🗑️' })
+    onRefresh?.()
   }
 
   const abrirWhatsapp = (e) => {
