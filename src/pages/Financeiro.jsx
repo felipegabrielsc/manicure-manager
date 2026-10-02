@@ -11,6 +11,7 @@ import { exportToCsv, exportToPrint } from '../utils/exportReport'
 import { formatCivilDate, money, monthRangeLocal, monthlyDueDate, toDateInputValue } from '../utils/dates'
 import toast from 'react-hot-toast'
 import { openWhatsApp } from '../utils/whatsapp'
+import { marcarEnvioManual } from '../application/notificationService'
 import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId } from '../utils/workspace'
 
@@ -414,11 +415,12 @@ export default function Financeiro() {
     setShowForm(true)
   }
 
-  function cobrarWhatsApp(cliente) {
+  async function cobrarWhatsApp(cliente) {
     const valor = cliente.monthly_fee || cliente.valorServicos || 0
     const venc = cliente.vencimento ? cliente.vencimento.toLocaleDateString('pt-BR') : `dia ${cliente.monthly_due_day || 10}`
     const ok = openWhatsApp(cliente.phone, `Oi ${cliente.name}! Sua mensalidade vence em ${venc}, no valor de R$ ${money(valor)}. Pode pagar por PIX quando puder 💜`)
-    if (!ok) toast.error('Cliente sem WhatsApp no cadastro')
+    if (!ok) return toast.error('Cliente sem WhatsApp no cadastro')
+    await marcarEnvioManual(supabase, { clientId: cliente.id, types: ['payment_reminder'] }).catch(() => {})
   }
 
   function abrirCobrancaRapida(cliente) {

@@ -1,6 +1,6 @@
 # Plano de ação — Manicure Manager
 
-Etapas 1 e 2 estão no código. A migration `029_workspace_followup_portfolio.sql` precisa ser colada no SQL Editor do Supabase antes do deploy. As etapas 3 a 9 ainda não começaram.
+Etapas 1 a 7 estão no código. Cole as migrations `029` a `033` no SQL Editor antes do deploy. A `033` é obrigatória se a `032` já foi aplicada: sem ela, marcar horário responde 404 porque `enqueue_notification` foi criada com `client_id` uuid e o banco usa bigint. O envio de WhatsApp fica desligado até existirem `WA_AKG_URL`, `WA_AKG_API_KEY` e `WHATSAPP_WEBHOOK_SECRET` nos secrets da Edge Function. As etapas 8 e 9 ainda não começaram.
 
 Objetivo: o salão continua funcionando se o WhatsApp cair, e o WhatsApp passa a confirmar, lembrar, avisar cancelamento e pedir retorno sem depender do navegador aberto.
 
@@ -134,7 +134,7 @@ Tipos desta etapa: `appointment_created`, `appointment_confirmed`, `appointment_
 
 RLS com `workspace_id()`. O worker usa service role e não depende da sessão da manicure.
 
-Retry: tentativa imediata, depois 30s, 2min e 10min. Na quinta falha, `failed` e `error_message`.
+Retry: tentativa imediata, depois 30s, 2min e 10min. Na quarta falha, `failed` e `error_message`. WhatsApp sem conexão não entra nesse retry: fica `pending` com `no_connection`.
 
 ### Código
 
