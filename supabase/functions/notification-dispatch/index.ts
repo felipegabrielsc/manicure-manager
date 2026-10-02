@@ -3,6 +3,7 @@ import webpush from 'npm:web-push@3.6.7'
 import { json } from '../_shared/cors.ts'
 import { morningSaoPauloIso } from '../_shared/whatsapp/format.ts'
 import { createWhatsAppProvider } from '../_shared/whatsapp/provider.ts'
+import { allowSend, dispatchLogEntry, WHATSAPP_BURST_LIMIT } from '../../../src/application/dispatchPolicy.js'
 
 const RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000]
 
@@ -115,6 +116,19 @@ async function holdWhatsapp(admin: ReturnType<typeof createClient>, id: string, 
   }).eq('id', id)
 }
 
+async function logDispatch(admin: ReturnType<typeof createClient>, entry: ReturnType<typeof dispatchLogEntry>) {
+  console.log(JSON.stringify({
+    kind: 'notification',
+    workspace: entry.user_id,
+    type: entry.type,
+    channel: entry.channel,
+    status: entry.status,
+    attempt: entry.attempt,
+    phone_tail: entry.phone_tail,
+  }))
+  await admin.from('notification_attempts').insert(entry)
+}
+
 async function markLegacy(admin: ReturnType<typeof createClient>, row: { appointment_id?: number; type: string }, nowIso: string) {
   if (!row.appointment_id) return
   if (row.type === 'appointment_created') {
@@ -157,6 +171,7 @@ Deno.serve(async (req) => {
   let sent = 0
   let held = 0
   let failed = 0
+  const sentByWorkspace: Record<string, number> = {}
 
   for (const row of due || []) {
     const { data: claimed } = await admin
@@ -180,6 +195,26 @@ Deno.serve(async (req) => {
     }
 
     if (row.channel === 'whatsapp') {
+      if (!allowSend(sentByWorkspace, row.user_id, WHATSAPP_BURST_LIMIT)) {
+        const next = new Date(Date.now() + 60 * 1000).toISOString()
+        await admin.from('notifications').update({
+          status: 'pending',
+          error_message: 'rate_limit',
+          next_attempt_at: next,
+          updated_at: next,
+        }).eq('id', row.id)
+        await logDispatch(admin, dispatchLogEntry({
+          workspaceId: row.user_id,
+          notificationId: row.id,
+          type: row.type,
+          channel: row.channel,
+          status: 'rate_limit',
+          attempt: row.attempts || 0,
+          phone: row.payload?.phone,
+        }))
+        held += 1
+        continue
+      }
       const { data: connection } = await admin
         .from('whatsapp_connections')
         .select('status, provider_session_id')
@@ -187,16 +222,35 @@ Deno.serve(async (req) => {
         .maybeSingle()
       if (!connection || connection.status !== 'connected' || !connection.provider_session_id) {
         await holdWhatsapp(admin, row.id, 'no_connection')
+        await logDispatch(admin, dispatchLogEntry({
+          workspaceId: row.user_id,
+          notificationId: row.id,
+          type: row.type,
+          channel: row.channel,
+          status: 'pending',
+          attempt: row.attempts || 0,
+          phone: row.payload?.phone,
+        }))
         held += 1
         continue
       }
       const phone = await destinationPhone(admin, row)
       const text = row.payload?.text || row.payload?.body || ''
+      sentByWorkspace[row.user_id] = (sentByWorkspace[row.user_id] || 0) + 1
       const result = await whatsapp.sendText({
         sessionId: connection.provider_session_id,
         phone: phone || '',
         text,
       })
+      const logged = (status: string, attempt = row.attempts || 0) => logDispatch(admin, dispatchLogEntry({
+        workspaceId: row.user_id,
+        notificationId: row.id,
+        type: row.type,
+        channel: row.channel,
+        status,
+        attempt,
+        phone,
+      }))
       if (result.ok) {
         const sentAt = new Date().toISOString()
         await admin.from('notifications').update({
@@ -207,6 +261,7 @@ Deno.serve(async (req) => {
           error_message: null,
           updated_at: sentAt,
         }).eq('id', row.id)
+        await logged('sent', row.attempts || 1)
         sent += 1
         continue
       }
@@ -216,11 +271,13 @@ Deno.serve(async (req) => {
           error_message: 'no_phone',
           updated_at: new Date().toISOString(),
         }).eq('id', row.id)
+        await logged('failed')
         failed += 1
         continue
       }
       if (!result.retry) {
         await holdWhatsapp(admin, row.id, result.error || 'no_connection')
+        await logged('pending', row.attempts || 0)
         held += 1
         continue
       }
@@ -232,6 +289,7 @@ Deno.serve(async (req) => {
         error_message: result.error || 'gateway_down',
         updated_at: new Date().toISOString(),
       }).eq('id', row.id)
+      await logged(decision.status, (row.attempts || 0) + 1)
       if (decision.status === 'failed') failed += 1
       else held += 1
       continue
@@ -261,6 +319,14 @@ Deno.serve(async (req) => {
         updated_at: sentAt,
       }).eq('id', row.id)
       await markLegacy(admin, row, sentAt)
+      await logDispatch(admin, dispatchLogEntry({
+        workspaceId: row.user_id,
+        notificationId: row.id,
+        type: row.type,
+        channel: row.channel,
+        status: 'sent',
+        attempt: row.attempts || 1,
+      }))
       sent += 1
       continue
     }
@@ -273,6 +339,14 @@ Deno.serve(async (req) => {
       error_message: result.reason || 'push_failed',
       updated_at: new Date().toISOString(),
     }).eq('id', row.id)
+    await logDispatch(admin, dispatchLogEntry({
+      workspaceId: row.user_id,
+      notificationId: row.id,
+      type: row.type,
+      channel: row.channel,
+      status: decision.status,
+      attempt: (row.attempts || 0) + 1,
+    }))
     if (decision.status === 'failed') failed += 1
   }
 

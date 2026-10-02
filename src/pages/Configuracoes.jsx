@@ -30,6 +30,9 @@ export default function Configuracoes() {
   const [instagram, setInstagram] = useState('')
   const [perfilPublicoAtivo, setPerfilPublicoAtivo] = useState(true)
   const [lembretesAtivos, setLembretesAtivos] = useState(true)
+  const [iaAtiva, setIaAtiva] = useState(false)
+  const [iaDisponivel, setIaDisponivel] = useState(false)
+  const [filaMorta, setFilaMorta] = useState([])
   const [horasLembrete, setHorasLembrete] = useState(24)
   const [pushAtivo, setPushAtivo] = useState(false)
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(null)
@@ -69,6 +72,14 @@ export default function Configuracoes() {
     setUserId(ws)
 
     const { data: perfil } = await supabase.from('profiles').select('*').eq('id', ws).single()
+    const { data: paradas } = await supabase
+      .from('notifications')
+      .select('id, type, channel, attempts, error_message, scheduled_for')
+      .eq('user_id', ws)
+      .eq('status', 'failed')
+      .order('scheduled_for', { ascending: false })
+      .limit(20)
+    setFilaMorta(paradas || [])
     const { data: meuPush } = ws === user.id
       ? { data: perfil }
       : await supabase.from('profiles').select('push_enabled').eq('id', user.id).maybeSingle()
@@ -80,6 +91,8 @@ export default function Configuracoes() {
         setInstagram(perfil.instagram || '')
         setPerfilPublicoAtivo(perfil.public_profile_active !== false)
         setLembretesAtivos(perfil.reminders_enabled !== false)
+        setIaDisponivel(Object.prototype.hasOwnProperty.call(perfil, 'ai_enabled'))
+        setIaAtiva(perfil.ai_enabled === true)
         setHorasLembrete(perfil.reminder_hours_before ?? 24)
         setPushAtivo(meuPush?.push_enabled === true)
         setAgendamentoAtivo(perfil.booking_active === false ? false : true)
@@ -150,6 +163,20 @@ export default function Configuracoes() {
     setMeuWhatsapp(v)
   }
 
+  async function reenfileirar(id) {
+    const agora = new Date().toISOString()
+    const { error } = await supabase.from('notifications').update({
+      status: 'pending',
+      attempts: 0,
+      next_attempt_at: agora,
+      error_message: null,
+      updated_at: agora,
+    }).eq('id', id).eq('status', 'failed')
+    if (error) return toast.error(error.message || 'Não voltou para a fila')
+    setFilaMorta(prev => prev.filter(item => item.id !== id))
+    toast.success('Aviso voltou para a fila')
+  }
+
   async function salvarDadosGerais() {
     const user = (await supabase.auth.getUser()).data.user
     if (!user) return
@@ -165,6 +192,7 @@ export default function Configuracoes() {
         public_profile_active: perfilPublicoAtivo,
         reminders_enabled: lembretesAtivos,
         reminder_hours_before: parseInt(horasLembrete, 10) || 24,
+        ...(iaDisponivel ? { ai_enabled: iaAtiva } : {}),
         booking_active: agendamentoAtivo,
         cover_url: coverUrl || null,
         logo_url: logoUrl || null,
@@ -364,6 +392,31 @@ export default function Configuracoes() {
                 </select>
             </div>
             <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>O lembrete sai sozinho pela fila, no horário configurado. O botão da agenda continua como reenvio manual.</p>
+            {iaDisponivel ? (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginTop: '14px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={iaAtiva} onChange={e => setIaAtiva(e.target.checked)} />
+                Atendimento automático no WhatsApp
+              </label>
+            ) : (
+              <p style={{ fontSize: '12px', color: '#b45309', margin: '12px 0 0' }}>Cole o SQL 034 para ligar o atendimento automático.</p>
+            )}
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '8px 0 0' }}>Desligado, a agenda continua confirmando e lembrando sozinha. Ligado, a cliente pode pedir horário na conversa. A resposta só grava depois que ela escolhe um horário livre.</p>
+        </div>
+
+        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+          <h3 style={{ marginTop: 0, color: '#991b1b' }}>Fila parada</h3>
+          <p style={{ fontSize: '12px', color: '#64748b', marginTop: 0 }}>Avisos que esgotaram as tentativas. Reenviar devolve o item para a fila, sem abrir o WhatsApp.</p>
+          {filaMorta.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '13px' }}>Nenhum aviso parado.</p> : filaMorta.map(item => (
+            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #f1f5f9' }}>
+              <div>
+                <strong style={{ fontSize: '13px' }}>{item.type}</strong>
+                <span style={{ display: 'block', fontSize: '12px', color: '#64748b' }}>{item.channel} · {item.attempts || 0} tentativas · {item.error_message || 'falhou'}</span>
+              </div>
+              <button type="button" onClick={() => reenfileirar(item.id)} style={{ border: 'none', background: '#eff6ff', color: '#2563eb', borderRadius: '8px', padding: '8px 10px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Reenviar
+              </button>
+            </div>
+          ))}
         </div>
 
         {userId && <WhatsAppStatus userId={userId} manage />}

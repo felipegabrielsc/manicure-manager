@@ -67,9 +67,10 @@ supabase/migrations/030_notifications.sql
 supabase/migrations/031_whatsapp_connections.sql
 supabase/migrations/032_notification_automations.sql
 supabase/migrations/033_fix_enqueue_client_id.sql
+supabase/migrations/034_assistant_and_observability.sql
 ```
 
-**Site novo:** rode **001–033** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. A **030** cria a fila de notificações; sem ela a agenda continua, mas o lembrete automático no servidor não grava. A **031** guarda o status da conexão do WhatsApp. A **032** grava os textos da cliente, o retorno do serviço e o aviso da lista de espera. A **033** corrige o agendamento quando `client_id` é bigint e libera aniversário e mínimo VIP na carteira — cole ela se marcar horário responder que `enqueue_notification` não existe. Depois faça o deploy de `mp-webhook`, `push-dispatch`, `notification-dispatch`, `whatsapp-connect` e `whatsapp-webhook`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–034** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. A **030** cria a fila de notificações; sem ela a agenda continua, mas o lembrete automático no servidor não grava. A **031** guarda o status da conexão do WhatsApp. A **032** grava os textos da cliente, o retorno do serviço e o aviso da lista de espera. A **033** corrige o agendamento quando `client_id` é bigint e libera aniversário e mínimo VIP na carteira — cole ela se marcar horário responder que `enqueue_notification` não existe. A **034** deixa o atendimento automático desligado até a dona marcar em Configurações, guarda a conversa e mostra no Admin quantos avisos falharam e quantas conexões estão em atenção. O segredo do webhook não pode ser o mesmo do cron nem o do Mercado Pago. Depois faça o deploy de `mp-webhook`, `push-dispatch`, `notification-dispatch`, `whatsapp-connect` e `whatsapp-webhook`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -185,6 +186,8 @@ supabase secrets set WA_AKG_URL=https://seu-gateway
 supabase secrets set WA_AKG_API_KEY=wag_sua_chave
 supabase secrets set WHATSAPP_WEBHOOK_SECRET=uma-senha-longa
 ```
+
+O `config.toml` deixa `verify_jwt = false` em `whatsapp-connect`, `whatsapp-webhook` e `notification-dispatch`. Faça o deploy por esse CLI, na raiz do repositório, para essa configuração valer. Se o botão Conectar no site mostrar *preflight doesn't pass* ou *Failed to send a request to the Edge Function*, a plataforma ainda está exigindo JWT no OPTIONS e o navegador bloqueia antes da função responder. Publique de novo o `whatsapp-connect`. A função continua recusando quem não está logado.
 
 Não coloque `WA_AKG_API_KEY` em variável `VITE_` nem na Vercel do site. Sem esses três secrets o botão Conectar avisa que o gateway não está configurado e nenhum texto automático sai.
 

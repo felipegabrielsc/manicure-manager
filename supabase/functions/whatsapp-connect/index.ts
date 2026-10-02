@@ -7,6 +7,7 @@ function sessionIdFor(workspaceId: string) {
 }
 
 Deno.serve(async (req) => {
+  // OPTIONS precisa responder 200. O JWT de quem está logado é conferido abaixo, no POST.
   if (req.method === 'OPTIONS') return json({ ok: true })
   if (req.method !== 'POST') return json({ ok: false, reason: 'method' }, 405)
 
