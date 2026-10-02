@@ -25,6 +25,7 @@ export default function Admin() {
   const [ativas, setAtivas] = useState(0)
   const [trialsSemana, setTrialsSemana] = useState([])
   const [sumidas, setSumidas] = useState([])
+  const [filaSaude, setFilaSaude] = useState(null)
 
   useEffect(() => {
     checkAdmin()
@@ -57,6 +58,9 @@ export default function Admin() {
         const { data: convites } = await supabase.from('invites').select('*').order('created_at', { ascending: false }).limit(20)
         setInvites(convites || [])
             
+        const { data: saude } = await supabase.rpc('admin_fila_saude')
+        if (saude?.ok) setFilaSaude(saude)
+
         if (lista) {
             setManicures(lista)
             
@@ -198,6 +202,19 @@ export default function Admin() {
                 <div><span style={{color:'#64748b', fontSize:'12px', fontWeight:'bold'}}>RENDA MENSAL</span><div style={{fontSize:'32px', fontWeight:'bold', color:'#db2777'}}>R$ {rendaMensal}</div></div>
             </div>
         </div>
+
+        {filaSaude && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #fecaca' }}>
+              <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold' }}>AVISOS PARADOS</span>
+              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#991b1b' }}>{filaSaude.failed || 0}</div>
+            </div>
+            <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #fde68a' }}>
+              <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold' }}>WHATSAPP EM ATENÇÃO</span>
+              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#b45309' }}>{filaSaude.attention || 0}</div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '24px' }}>
           <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #fde68a' }}>
