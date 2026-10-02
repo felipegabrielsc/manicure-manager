@@ -187,6 +187,8 @@ supabase secrets set WA_AKG_API_KEY=wag_sua_chave
 supabase secrets set WHATSAPP_WEBHOOK_SECRET=uma-senha-longa
 ```
 
+O `config.toml` deixa `verify_jwt = false` em `whatsapp-connect`, `whatsapp-webhook` e `notification-dispatch`. Faça o deploy por esse CLI, na raiz do repositório, para essa configuração valer. Se o botão Conectar no site mostrar *preflight doesn't pass* ou *Failed to send a request to the Edge Function*, a plataforma ainda está exigindo JWT no OPTIONS e o navegador bloqueia antes da função responder. Publique de novo o `whatsapp-connect`. A função continua recusando quem não está logado.
+
 Não coloque `WA_AKG_API_KEY` em variável `VITE_` nem na Vercel do site. Sem esses três secrets o botão Conectar avisa que o gateway não está configurado e nenhum texto automático sai.
 
 8. No celular: instale o PWA e ative em **Configurações → Notificações Push**
