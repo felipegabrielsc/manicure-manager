@@ -53,8 +53,9 @@ function horaSp(value) {
   }).format(value instanceof Date ? value : new Date(value))
 }
 
-function dueOrNow(when, now) {
-  return when.getTime() < now.getTime() ? new Date(now) : when
+function scheduleReminder(when, now, remindersEnabled) {
+  const stillAhead = when.getTime() >= now.getTime()
+  return { when, status: remindersEnabled && stillAhead ? 'pending' : 'cancelled' }
 }
 
 function row({ appointment, type, when, title, body, whatsappText, status = 'pending', channels = CHANNELS }) {
@@ -96,7 +97,6 @@ export function planAppointmentNotifications({
   const start = new Date(appointment.start_time)
   const nome = appointment.clients?.name || 'Cliente'
   const hora = horaSp(start)
-  const reminderStatus = remindersEnabled ? 'pending' : 'cancelled'
   const lembrete = msgLembrete(appointment)
 
   if (appointment.status === 'CANCELADO' || appointment.status === 'FALTOU') {
@@ -166,28 +166,28 @@ export function planAppointmentNotifications({
       whatsappText: msgConfirmarHorario(appointment),
     })
 
-  const far = dueOrNow(new Date(start.getTime() - hours * 60 * 60 * 1000), now)
-  const near = dueOrNow(new Date(start.getTime() - 2 * 60 * 60 * 1000), now)
+  const far = scheduleReminder(new Date(start.getTime() - hours * 60 * 60 * 1000), now, remindersEnabled)
+  const near = scheduleReminder(new Date(start.getTime() - 2 * 60 * 60 * 1000), now, remindersEnabled)
 
   return [
     ...immediate,
     ...row({
       appointment,
       type: 'appointment_reminder_24h',
-      when: far,
+      when: far.when,
       title: 'Lembrete de horário',
       body: `${nome} às ${hora}.`,
       whatsappText: lembrete,
-      status: reminderStatus,
+      status: far.status,
     }),
     ...row({
       appointment,
       type: 'appointment_reminder_2h',
-      when: near,
+      when: near.when,
       title: 'Lembrete de horário',
       body: `${nome} às ${hora}.`,
       whatsappText: lembrete,
-      status: reminderStatus,
+      status: near.status,
     }),
   ]
 }
