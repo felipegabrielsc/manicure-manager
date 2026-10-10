@@ -351,17 +351,6 @@ export default function Agenda() {
         </div>
       )}
 
-      {motivoOpen && (
-        <div style={overlayStyle}>
-          <div style={modalBoxStyle}>
-            <h3 style={{ marginTop: 0 }}>{motivoTipo === 'FALTOU' ? 'Registrar falta' : 'Cancelar horário'}</h3>
-            <textarea value={motivoTexto} onChange={e => setMotivoTexto(e.target.value)} placeholder="Motivo (opcional)" rows={3} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
-            <button onClick={marcarStatusComMotivo} style={{ ...btnFull, background: '#b91c1c', marginTop: '10px' }}>Confirmar</button>
-            <button onClick={() => setMotivoOpen(false)} style={{ width: '100%', padding: '12px', marginTop: '8px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Fechar</button>
-          </div>
-        </div>
-      )}
-
       {/* MODAL GERENCIAMENTO */}
       {editModalOpen && agendamentoSelecionado && (
         <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) fecharOpcoes() }}>
@@ -399,6 +388,17 @@ export default function Agenda() {
             <button onClick={() => { setAcaoConfirmacao(() => deletarAgendamento); setAlertModal({ isOpen: true, type: 'confirm', title: 'Excluir?', message: 'Tem certeza?' }) }} style={{ width: '100%', marginTop: '10px', padding: '12px', borderRadius: '8px', border: '1px solid #dc2626', background: 'white', color: '#dc2626', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
                 <Trash2 size={18} /> Excluir
             </button>
+          </div>
+        </div>
+      )}
+
+      {motivoOpen && (
+        <div style={{ ...overlayStyle, zIndex: 80 }}>
+          <div style={modalBoxStyle}>
+            <h3 style={{ marginTop: 0 }}>{motivoTipo === 'FALTOU' ? 'Registrar falta' : 'Cancelar horário'}</h3>
+            <textarea value={motivoTexto} onChange={e => setMotivoTexto(e.target.value)} placeholder="Motivo (opcional)" rows={3} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #ccc', boxSizing: 'border-box' }} />
+            <button onClick={marcarStatusComMotivo} style={{ ...btnFull, background: '#b91c1c', marginTop: '10px' }}>Confirmar</button>
+            <button onClick={() => setMotivoOpen(false)} style={{ width: '100%', padding: '12px', marginTop: '8px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Fechar</button>
           </div>
         </div>
       )}

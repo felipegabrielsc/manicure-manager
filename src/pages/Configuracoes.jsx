@@ -391,7 +391,7 @@ export default function Configuracoes() {
                     <option value="48">48 horas</option>
                 </select>
             </div>
-            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>O lembrete sai sozinho pela fila, no horário configurado. O botão da agenda continua como reenvio manual.</p>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>O lembrete sai sozinho pela fila, no horário configurado. Se o atendimento já estiver mais perto do que essa antecedência, sai só a confirmação. O botão da agenda continua como reenvio manual.</p>
             {iaDisponivel ? (
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginTop: '14px', cursor: 'pointer' }}>
                 <input type="checkbox" checked={iaAtiva} onChange={e => setIaAtiva(e.target.checked)} />

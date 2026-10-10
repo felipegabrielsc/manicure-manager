@@ -71,15 +71,31 @@ describe('notificationPlan', () => {
     expect(keep.some((key) => key.includes('appointment_reminder'))).toBe(false)
   })
 
-  it('lembrete no passado fica para agora', () => {
+  it('lembrete que já passou não sai junto com a confirmação', () => {
     const soon = new Date(now.getTime() + 30 * 60 * 1000)
     const rows = planAppointmentNotifications({
       appointment: { ...appointment, start_time: soon.toISOString() },
       reminderHours: 24,
       now,
     })
-    const reminder = rows.find((row) => row.type === 'appointment_reminder_24h')
-    expect(minuteInSaoPaulo(reminder.scheduled_for)).toBe(minuteInSaoPaulo(now))
+    const reminders = rows.filter((row) => row.type.startsWith('appointment_reminder'))
+    const confirmed = rows.filter((row) => row.type === 'appointment_confirmed')
+    expect(reminders.every((row) => row.status === 'cancelled')).toBe(true)
+    expect(confirmed.every((row) => row.status === 'pending')).toBe(true)
+  })
+
+  it('com menos de 24h só o lembrete de 2h continua na fila', () => {
+    const start = new Date(now.getTime() + 22 * 60 * 60 * 1000)
+    const rows = planAppointmentNotifications({
+      appointment: { ...appointment, start_time: start.toISOString() },
+      reminderHours: 24,
+      now,
+    })
+    const far = rows.filter((row) => row.type === 'appointment_reminder_24h')
+    const near = rows.filter((row) => row.type === 'appointment_reminder_2h')
+    expect(far.every((row) => row.status === 'cancelled')).toBe(true)
+    expect(near.every((row) => row.status === 'pending')).toBe(true)
+    expect(minuteInSaoPaulo(near[0].scheduled_for)).toBe(minuteInSaoPaulo(new Date(start.getTime() - 2 * 60 * 60 * 1000)))
   })
 
   it('o WhatsApp da confirmação fala com a cliente e o push com o salão', () => {
