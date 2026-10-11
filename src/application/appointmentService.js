@@ -164,12 +164,27 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
 }
 
 export async function reabrirAtendimento(supabase, agendamento) {
+  let packageUsed = null
+  if (agendamento?.payment_method === 'PACOTE' && agendamento.client_id) {
+    const { data: cli } = await supabase.from('clients').select('package_used').eq('id', agendamento.client_id).maybeSingle()
+    packageUsed = Number(cli?.package_used) || 0
+    if (packageUsed > 0) {
+      const { error: pkgErr } = await supabase.from('clients').update({ package_used: packageUsed - 1 }).eq('id', agendamento.client_id)
+      if (pkgErr) return { ok: false, error: pkgErr.message }
+    }
+  }
+
   const { error } = await supabase.from('appointments').update({
     status: 'AGENDADO',
     payment_method: null,
   }).eq('id', agendamento.id)
-  if (error) return { ok: false, error: error.message }
-  await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO' })
+  if (error) {
+    if (packageUsed > 0) {
+      await supabase.from('clients').update({ package_used: packageUsed }).eq('id', agendamento.client_id)
+    }
+    return { ok: false, error: error.message }
+  }
+  await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO', payment_method: null })
   return { ok: true }
 }
 

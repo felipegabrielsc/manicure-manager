@@ -164,7 +164,7 @@ export default function Clientes() {
             tipo: 'servico',
             titulo: app.services?.name || 'Serviço',
             date: app.start_time,
-            amount: Number(app.agreed_price) || 0,
+            amount: app.payment_method === 'MENSALIDADE' || app.payment_method === 'PACOTE' ? 0 : (Number(app.agreed_price) || 0),
             payment_method: app.payment_method,
             category: 'servico',
           }))
