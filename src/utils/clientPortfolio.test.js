@@ -73,6 +73,22 @@ describe('carteira da cliente', () => {
     ])
   })
 
+  it('não soma a visita da mensalidade de novo quando o mês já foi recebido', () => {
+    const carteira = carteiraDaCliente({
+      cliente,
+      atendimentos: [
+        { id: 1, client_id: 7, status: 'CONCLUIDO', start_time: '2026-09-02T15:00:00.000Z', agreed_price: 80, payment_method: 'MENSALIDADE', services: { name: 'Gel' } },
+        { id: 2, client_id: 7, status: 'CONCLUIDO', start_time: '2026-09-09T15:00:00.000Z', agreed_price: 40, payment_method: 'PIX', services: { name: 'Pé' } },
+      ],
+      compras: [
+        { id: 3, client_id: 7, description: 'Mensalidade Maria', amount: 150, date: '2026-10-10', category: 'mensalidade', type: 'RECEITA' },
+      ],
+      now,
+    })
+    expect(carteira.atendimentos).toBe(2)
+    expect(carteira.faturado).toBe(190)
+  })
+
   it('reconhece aniversário só pelo mês', () => {
     expect(aniversarioNoMes('1992-10-08', now)).toBe(true)
     expect(aniversarioNoMes('1992-11-08', now)).toBe(false)

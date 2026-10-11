@@ -516,13 +516,15 @@ export default function Configuracoes() {
                     <div className="hours-row">
                     <span className="day-name" style={{ color: h.is_closed ? '#94a3b8' : '#334155' }}>{diasSemana[h.day_of_week]}</span>
                     <input
+                      className="hours-open"
                       type="time"
                       value={toTimeInput(h.open_time, '09:00')}
                       disabled={h.is_closed}
                       onChange={e => updateHorario(i, 'open_time', e.target.value)}
                     />
-                    <span style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
+                    <span className="hours-dash" style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
                     <input
+                      className="hours-close"
                       type="time"
                       value={toTimeInput(h.close_time, '18:00')}
                       disabled={h.is_closed}
@@ -540,12 +542,14 @@ export default function Configuracoes() {
                       <div className="hours-row hours-break">
                         <span className="day-name" style={{ color: '#64748b', fontWeight: 600, fontSize: '12px' }}>Almoço</span>
                         <input
+                          className="hours-open"
                           type="time"
                           value={h.break_start ? toTimeInput(h.break_start, '') : ''}
                           onChange={e => updateHorario(i, 'break_start', e.target.value)}
                         />
-                        <span style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
+                        <span className="hours-dash" style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
                         <input
+                          className="hours-close"
                           type="time"
                           value={h.break_end ? toTimeInput(h.break_end, '') : ''}
                           onChange={e => updateHorario(i, 'break_end', e.target.value)}

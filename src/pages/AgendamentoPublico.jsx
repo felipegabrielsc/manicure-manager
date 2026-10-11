@@ -13,12 +13,6 @@ import {
 import { toDateInputValue } from '../utils/dates'
 import { msgPedidoPublico } from '../utils/bookingMessages'
 
-function codigoPedido() {
-  const buf = new Uint32Array(1)
-  crypto.getRandomValues(buf)
-  return String(1000 + (buf[0] % 9000))
-}
-
 export default function AgendamentoPublico() {
   const { userId } = useParams()
 
@@ -29,7 +23,6 @@ export default function AgendamentoPublico() {
   const [servicos, setServicos] = useState([])
   const [manicurePhone, setManicurePhone] = useState('')
   const [businessName, setBusinessName] = useState('')
-  const [codigoValidacao, setCodigoValidacao] = useState('')
 
   const [nome, setNome] = useState('')
   const [phone, setPhone] = useState('')
@@ -57,7 +50,6 @@ export default function AgendamentoPublico() {
         setManicurePhone(perfil?.whatsapp || '')
         setBusinessName(perfil?.business_name || 'Manicure')
         setServicos(agenda.services || [])
-        setCodigoValidacao(codigoPedido())
       } catch (err) {
         console.error(err)
         setAgendaAberta(false)
@@ -172,7 +164,6 @@ export default function AgendamentoPublico() {
       start: dataFinal,
       servico: servico?.name,
       preco,
-      codigo: codigoValidacao,
       status: pedidoStatus,
     })
     if (wa) window.open(`https://wa.me/55${wa}?text=${encodeURIComponent(msg)}`, '_blank')
@@ -306,9 +297,14 @@ export default function AgendamentoPublico() {
           </form>
         ) : (
           <div style={{ padding: '30px 20px', textAlign: 'center' }}>
-            <h3 style={{ color: '#b45309' }}>Quase lá!</h3>
-            <p style={{ color: '#666', marginBottom: '16px' }}>Avise no WhatsApp com o serviço, a data e o código. O pedido fica pendente até a confirmação.</p>
-            <div style={{ background: '#fef3c7', padding: '15px', borderRadius: '8px', fontSize: '24px', fontWeight: 'bold', letterSpacing: '5px', color: '#d97706', marginBottom: '30px' }}>{codigoValidacao}</div>
+            <h3 style={{ color: pedidoStatus === 'AGENDADO' ? '#166534' : '#b45309' }}>
+              {pedidoStatus === 'AGENDADO' ? 'Horário confirmado' : 'Pedido na agenda'}
+            </h3>
+            <p style={{ color: '#666', marginBottom: '16px' }}>
+              {pedidoStatus === 'AGENDADO'
+                ? 'O horário já está confirmado. Se quiser, avise no WhatsApp. Não precisa de código.'
+                : 'O pedido já está na agenda da profissional. Se quiser, avise no WhatsApp. Não precisa de código.'}
+            </p>
             <button onClick={abrirWhatsAppPedido} className="ui-btn" style={{ background: '#16a34a', color: 'white', width: '100%' }}>
               <Send size={20} /> Avisar no WhatsApp
             </button>
