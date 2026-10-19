@@ -62,17 +62,10 @@ supabase/migrations/025_pedir_horario_sem_id.sql
 supabase/migrations/026_fix_appointment_id_bigint.sql
 supabase/migrations/027_planos_preco_e_galeria.sql
 supabase/migrations/028_perfil_planos_pacote_retorno.sql
-supabase/migrations/029_workspace_followup_portfolio.sql
-supabase/migrations/030_notifications.sql
-supabase/migrations/031_whatsapp_connections.sql
-supabase/migrations/032_notification_automations.sql
-supabase/migrations/033_fix_enqueue_client_id.sql
-supabase/migrations/034_assistant_and_observability.sql
-supabase/migrations/035_skip_past_reminders.sql
-supabase/migrations/036_public_booking_rate_limit.sql
+supabase/migrations/029_mp_billing_idempotency.sql
 ```
 
-**Site novo:** rode **001–036** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** faz a profissional ver o retorno e a galeria do salão. A **030** cria a fila de notificações; sem ela a agenda continua, mas o lembrete automático no servidor não grava. A **031** guarda o status da conexão do WhatsApp. A **032** grava os textos da cliente, o retorno do serviço e o aviso da lista de espera. A **033** corrige o agendamento quando `client_id` é bigint e libera aniversário e mínimo VIP na carteira — cole ela se marcar horário responder que `enqueue_notification` não existe. A **034** deixa o atendimento automático desligado até a dona marcar em Configurações, guarda a conversa e mostra no Admin quantos avisos falharam e quantas conexões estão em atenção. A **035** impede que o lembrete saia no mesmo instante da confirmação quando o horário marcado já está mais perto do que a antecedência configurada. A **036** limita o link público por WhatsApp, por IP e pelo total do salão. O código de 4 dígitos da tela não segura rajada. O segredo do webhook não pode ser o mesmo do cron nem o do Mercado Pago. Depois faça o deploy de `mp-webhook`, `push-dispatch`, `notification-dispatch`, `whatsapp-connect` e `whatsapp-webhook`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–029** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** evita renovação duplicada no Mercado Pago (`pendente → aprovado`). Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -138,6 +131,8 @@ supabase secrets set MP_ACCESS_TOKEN=APP_USR-seu-token
 `https://SEU_PROJETO.supabase.co/functions/v1/mp-webhook`
 
 Eventos de **pagamento**. Sem a função + token, o botão Assinar cai no link fixo (`checkout_url`) e o plano **não** ativa sozinho.
+
+O webhook **consulta a API oficial** (`GET /v1/payments/:id`) e só aplica o efeito financeiro uma vez por `mp_payment_id`. Notificação duplicada ou `pending` seguido de `approved` não gera duas assinaturas. Reembolso/`charged_back` cancela se aquele pagamento for o último ativo. Falha temporária da API responde **503** para o Mercado Pago tentar de novo. Rode a **029** e faça o deploy de `mp-webhook` de novo.
 
 **Trava de plano:** teste 14 dias (Agenda, Clientes, Serviços, Financeiro). Estoque, Fidelidade e Equipe exigem o plano **Pro**. Teste/assinatura vencidos mandam para `/planos`.
 
