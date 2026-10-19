@@ -164,7 +164,31 @@ supabase secrets set CRON_SECRET=uma-senha-longa
 
 `https://SEU_PROJETO.supabase.co/functions/v1/push-dispatch`
 
-6. No celular: instale o PWA e ative em **Configurações → Notificações Push**
+6. Fila da etapa 4, depois de colar a **030**:
+
+```bash
+supabase functions deploy notification-dispatch
+supabase functions deploy push-dispatch
+```
+
+O `notification-dispatch` usa o mesmo `CRON_SECRET`. Agende a cada minuto. Ele manda o push. O WhatsApp sai por ele quando a conexão está `connected`. Sem gateway, a linha fica `pending` com `no_connection` e a agenda abre normalmente. O `push-dispatch` redeployado não repete um push que já está nessa fila.
+
+7. WhatsApp automático, com o gateway fora deste repositório:
+
+```bash
+supabase functions deploy whatsapp-connect
+supabase functions deploy whatsapp-webhook
+supabase functions deploy notification-dispatch
+supabase secrets set WA_AKG_URL=https://seu-gateway
+supabase secrets set WA_AKG_API_KEY=wag_sua_chave
+supabase secrets set WHATSAPP_WEBHOOK_SECRET=uma-senha-longa
+```
+
+O `config.toml` deixa `verify_jwt = false` nessas três funções. O deploy tem de ser com o CLI, na raiz do repositório, no projeto `fkgmapnuzphaleuyffkq`. Publicar a Vercel não cria função. Se o botão Conectar mostrar *Failed to send a request to the Edge Function* ou *preflight doesn't pass*, a função ainda não existe nesse projeto: o OPTIONS responde 404.
+
+Não coloque `WA_AKG_API_KEY` em variável `VITE_` nem na Vercel do site. Sem esses três secrets o botão Conectar avisa que o gateway não está configurado e nenhum texto automático sai.
+
+8. No celular: instale o PWA e ative em **Configurações → Notificações Push**
 
 A agenda mostra o nome da profissional e deixa filtrar. Duas profissionais podem ocupar o mesmo horário; conflito só na mesma pessoa (ou se o horário não tiver profissional).
 

@@ -3,8 +3,11 @@ import { supabase } from '../supabaseClient'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, Gift, Ticket, Star, Trash2, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function Fidelidade() {
+  const { profile } = useSessionProfile()
   const [userId, setUserId] = useState(null)
   const [settings, setSettings] = useState({ visits_required: 10, reward_description: '1 serviço grátis', active: true })
   const [cupons, setCupons] = useState([])
@@ -20,15 +23,16 @@ export default function Fidelidade() {
   async function init() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    setUserId(user.id)
+    const ws = workspaceId(profile, user.id)
+    setUserId(ws)
 
-    const { data: ls } = await supabase.from('loyalty_settings').select('*').eq('user_id', user.id).maybeSingle()
+    const { data: ls } = await supabase.from('loyalty_settings').select('*').eq('user_id', ws).maybeSingle()
     if (ls) setSettings(ls)
 
-    const { data: c } = await supabase.from('coupons').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
+    const { data: c } = await supabase.from('coupons').select('*').eq('user_id', ws).order('created_at', { ascending: false })
     setCupons(c || [])
 
-    const { data: cl } = await supabase.from('clients').select('id, name, loyalty_visits, loyalty_rewards_redeemed').eq('user_id', user.id).order('loyalty_visits', { ascending: false }).limit(10)
+    const { data: cl } = await supabase.from('clients').select('id, name, loyalty_visits, loyalty_rewards_redeemed').eq('user_id', ws).order('loyalty_visits', { ascending: false }).limit(10)
     setClientesTop(cl || [])
   }
 

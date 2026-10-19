@@ -93,23 +93,32 @@ export async function unsubscribePush(userId) {
   await supabase.from('profiles').update({ push_enabled: false }).eq('id', userId)
 }
 
-export async function checkPendingNotifications(userId) {
+export async function checkPendingNotifications(authUserId) {
   const { data: perfil } = await supabase
     .from('profiles')
-    .select('push_enabled, reminder_hours_before')
-    .eq('id', userId)
+    .select('push_enabled, reminder_hours_before, salon_owner_id')
+    .eq('id', authUserId)
     .single()
 
   if (!perfil?.push_enabled || Notification.permission !== 'granted') return
 
-  const horas = perfil.reminder_hours_before ?? 24
+  const workspace = perfil.salon_owner_id || authUserId
+  let horas = perfil.reminder_hours_before ?? 24
+  if (perfil.salon_owner_id) {
+    const { data: dona } = await supabase
+      .from('profiles')
+      .select('reminder_hours_before')
+      .eq('id', perfil.salon_owner_id)
+      .maybeSingle()
+    if (dona?.reminder_hours_before != null) horas = dona.reminder_hours_before
+  }
   const agora = new Date()
   const limite = new Date(agora.getTime() + horas * 60 * 60 * 1000)
 
   const { data: pendentes } = await supabase
     .from('appointments')
     .select('id, start_time, clients(name)')
-    .eq('user_id', userId)
+    .eq('user_id', workspace)
     .eq('status', 'PENDENTE')
     .is('push_pending_sent_at', null)
 
@@ -124,7 +133,7 @@ export async function checkPendingNotifications(userId) {
   const { data: lembretes } = await supabase
     .from('appointments')
     .select('id, start_time, clients(name)')
-    .eq('user_id', userId)
+    .eq('user_id', workspace)
     .eq('status', 'AGENDADO')
     .is('reminder_sent_at', null)
     .is('push_reminder_sent_at', null)

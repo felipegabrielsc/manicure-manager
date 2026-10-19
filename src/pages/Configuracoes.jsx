@@ -8,8 +8,10 @@ import { exportClientsCsv } from '../utils/exportReport'
 import UnlockAdminForm from '../components/UnlockAdminForm'
 import PortfolioEditor from '../components/PortfolioEditor'
 import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 import { isSiteOwnerId } from '../utils/siteOwner'
 import { Link } from 'react-router-dom'
+import WhatsAppStatus from '../components/WhatsAppStatus'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
@@ -17,6 +19,7 @@ import "driver.js/dist/driver.css";
 export default function Configuracoes() {
   const { profile, refreshProfile } = useSessionProfile()
   const [userId, setUserId] = useState(null)
+  const [authUserId, setAuthUserId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [savingLock, setSavingLock] = useState(false)
   
@@ -27,6 +30,9 @@ export default function Configuracoes() {
   const [instagram, setInstagram] = useState('')
   const [perfilPublicoAtivo, setPerfilPublicoAtivo] = useState(true)
   const [lembretesAtivos, setLembretesAtivos] = useState(true)
+  const [iaAtiva, setIaAtiva] = useState(false)
+  const [iaDisponivel, setIaDisponivel] = useState(false)
+  const [filaMorta, setFilaMorta] = useState([])
   const [horasLembrete, setHorasLembrete] = useState(24)
   const [pushAtivo, setPushAtivo] = useState(false)
   const [agendamentoAtivo, setAgendamentoAtivo] = useState(null)
@@ -61,9 +67,22 @@ export default function Configuracoes() {
   async function carregarDados() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    setUserId(user.id)
+    const ws = workspaceId(profile, user.id)
+    setAuthUserId(user.id)
+    setUserId(ws)
 
-    const { data: perfil } = await supabase.from('profiles').select('*').eq('id', user.id).single()
+    const { data: perfil } = await supabase.from('profiles').select('*').eq('id', ws).single()
+    const { data: paradas } = await supabase
+      .from('notifications')
+      .select('id, type, channel, attempts, error_message, scheduled_for')
+      .eq('user_id', ws)
+      .eq('status', 'failed')
+      .order('scheduled_for', { ascending: false })
+      .limit(20)
+    setFilaMorta(paradas || [])
+    const { data: meuPush } = ws === user.id
+      ? { data: perfil }
+      : await supabase.from('profiles').select('push_enabled').eq('id', user.id).maybeSingle()
     if (perfil) {
         setNomeNegocio(perfil.business_name || '')
         setMeuWhatsapp(perfil.whatsapp || '')
@@ -72,19 +91,21 @@ export default function Configuracoes() {
         setInstagram(perfil.instagram || '')
         setPerfilPublicoAtivo(perfil.public_profile_active !== false)
         setLembretesAtivos(perfil.reminders_enabled !== false)
+        setIaDisponivel(Object.prototype.hasOwnProperty.call(perfil, 'ai_enabled'))
+        setIaAtiva(perfil.ai_enabled === true)
         setHorasLembrete(perfil.reminder_hours_before ?? 24)
-        setPushAtivo(perfil.push_enabled === true)
+        setPushAtivo(meuPush?.push_enabled === true)
         setAgendamentoAtivo(perfil.booking_active === false ? false : true)
         setCoverUrl(perfil.cover_url || '')
         setLogoUrl(perfil.logo_url || '')
         setAutoConfirm(perfil.auto_confirm_public === true)
         setReviewFirst(perfil.review_first_visit !== false)
-    } else {
+    } else if (ws === user.id) {
         await supabase.from('profiles').insert({ id: user.id, booking_active: true })
         setAgendamentoAtivo(true)
     }
 
-    const { data: existingHours } = await supabase.from('business_hours').select('*').eq('user_id', user.id).order('day_of_week')
+    const { data: existingHours } = await supabase.from('business_hours').select('*').eq('user_id', ws).order('day_of_week')
     let hoursMap = []
     for (let i = 0; i < 7; i++) {
         const found = existingHours?.find(h => h.day_of_week === i)
@@ -97,14 +118,14 @@ export default function Configuracoes() {
             break_end: found.break_end ? toTimeInput(found.break_end, '') : '',
           })
         }
-        else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', break_start: '', break_end: '', is_closed: i === 0, user_id: user.id })
+        else hoursMap.push({ day_of_week: i, open_time: '09:00', close_time: '18:00', break_start: '', break_end: '', is_closed: i === 0, user_id: ws })
     }
     setHorarios(hoursMap)
 
     const { data: slots } = await supabase
       .from('blocked_slots')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', ws)
       .gte('start_time', new Date().toISOString())
       .order('start_time')
 
@@ -142,9 +163,26 @@ export default function Configuracoes() {
     setMeuWhatsapp(v)
   }
 
+  async function reenfileirar(id) {
+    const agora = new Date().toISOString()
+    const { error } = await supabase.from('notifications').update({
+      status: 'pending',
+      attempts: 0,
+      next_attempt_at: agora,
+      error_message: null,
+      updated_at: agora,
+    }).eq('id', id).eq('status', 'failed')
+    if (error) return toast.error(error.message || 'Não voltou para a fila')
+    setFilaMorta(prev => prev.filter(item => item.id !== id))
+    toast.success('Aviso voltou para a fila')
+  }
+
   async function salvarDadosGerais() {
     const user = (await supabase.auth.getUser()).data.user
-    const { error: errPerfil } = await supabase.from('profiles').upsert({
+    if (!user) return
+    const ws = workspaceId(profile, user.id)
+    const { error: errPerfil } = ws === user.id
+      ? await supabase.from('profiles').upsert({
         id: user.id,
         business_name: nomeNegocio,
         whatsapp: meuWhatsapp.replace(/\D/g, ''),
@@ -154,20 +192,22 @@ export default function Configuracoes() {
         public_profile_active: perfilPublicoAtivo,
         reminders_enabled: lembretesAtivos,
         reminder_hours_before: parseInt(horasLembrete, 10) || 24,
+        ...(iaDisponivel ? { ai_enabled: iaAtiva } : {}),
         booking_active: agendamentoAtivo,
         cover_url: coverUrl || null,
         logo_url: logoUrl || null,
         auto_confirm_public: autoConfirm,
         review_first_visit: reviewFirst,
     })
-    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed, user_id }) => ({
+      : { error: null }
+    const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed }) => ({
       day_of_week,
       open_time: toTimeInput(open_time, '09:00'),
       close_time: toTimeInput(close_time, '18:00'),
       break_start: break_start ? toTimeInput(break_start) : null,
       break_end: break_end ? toTimeInput(break_end) : null,
       is_closed,
-      user_id,
+      user_id: ws,
     }))
     const { error: errHorario } = await supabase.from('business_hours').upsert(dadosHorarios, { onConflict: 'user_id, day_of_week' })
     if (errPerfil || errHorario) {
@@ -178,10 +218,10 @@ export default function Configuracoes() {
   }
 
   async function togglePush() {
-    if (!userId) return
+    if (!authUserId) return
     const caps = getPushCapabilities()
     if (pushAtivo) {
-      await unsubscribePush(userId)
+      await unsubscribePush(authUserId)
       setPushAtivo(false)
       toast('Notificações desativadas')
       return
@@ -191,7 +231,7 @@ export default function Configuracoes() {
       if (!caps.notificationApi) return toast.error('Este navegador não suporta notificações.')
       return toast.error('Instale o app na tela inicial (PWA) e tente de novo.')
     }
-    const result = await subscribeToPush(userId)
+    const result = await subscribeToPush(authUserId)
     if (result.ok) {
       setPushAtivo(true)
       toast.success('Permissão salva. Com o envio no servidor ligado, o aviso chega com o app fechado.')
@@ -351,8 +391,35 @@ export default function Configuracoes() {
                     <option value="48">48 horas</option>
                 </select>
             </div>
-            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>Na agenda, você verá clientes que precisam de lembrete e poderá enviar via WhatsApp.</p>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '10px 0 0' }}>O lembrete sai sozinho pela fila, no horário configurado. Se o atendimento já estiver mais perto do que essa antecedência, sai só a confirmação. O botão da agenda continua como reenvio manual.</p>
+            {iaDisponivel ? (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginTop: '14px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={iaAtiva} onChange={e => setIaAtiva(e.target.checked)} />
+                Atendimento automático no WhatsApp
+              </label>
+            ) : (
+              <p style={{ fontSize: '12px', color: '#b45309', margin: '12px 0 0' }}>Cole o SQL 034 para ligar o atendimento automático.</p>
+            )}
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '8px 0 0' }}>Desligado, a agenda continua confirmando e lembrando sozinha. Ligado, a cliente pode pedir horário na conversa. A resposta só grava depois que ela escolhe um horário livre.</p>
         </div>
+
+        <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
+          <h3 style={{ marginTop: 0, color: '#991b1b' }}>Fila parada</h3>
+          <p style={{ fontSize: '12px', color: '#64748b', marginTop: 0 }}>Avisos que esgotaram as tentativas. Reenviar devolve o item para a fila, sem abrir o WhatsApp.</p>
+          {filaMorta.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '13px' }}>Nenhum aviso parado.</p> : filaMorta.map(item => (
+            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #f1f5f9' }}>
+              <div>
+                <strong style={{ fontSize: '13px' }}>{item.type}</strong>
+                <span style={{ display: 'block', fontSize: '12px', color: '#64748b' }}>{item.channel} · {item.attempts || 0} tentativas · {item.error_message || 'falhou'}</span>
+              </div>
+              <button type="button" onClick={() => reenfileirar(item.id)} style={{ border: 'none', background: '#eff6ff', color: '#2563eb', borderRadius: '8px', padding: '8px 10px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Reenviar
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {userId && <WhatsAppStatus userId={userId} manage />}
 
         {/* PUSH NOTIFICATIONS */}
         <div id="card-push" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
@@ -449,13 +516,15 @@ export default function Configuracoes() {
                     <div className="hours-row">
                     <span className="day-name" style={{ color: h.is_closed ? '#94a3b8' : '#334155' }}>{diasSemana[h.day_of_week]}</span>
                     <input
+                      className="hours-open"
                       type="time"
                       value={toTimeInput(h.open_time, '09:00')}
                       disabled={h.is_closed}
                       onChange={e => updateHorario(i, 'open_time', e.target.value)}
                     />
-                    <span style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
+                    <span className="hours-dash" style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
                     <input
+                      className="hours-close"
                       type="time"
                       value={toTimeInput(h.close_time, '18:00')}
                       disabled={h.is_closed}
@@ -473,12 +542,14 @@ export default function Configuracoes() {
                       <div className="hours-row hours-break">
                         <span className="day-name" style={{ color: '#64748b', fontWeight: 600, fontSize: '12px' }}>Almoço</span>
                         <input
+                          className="hours-open"
                           type="time"
                           value={h.break_start ? toTimeInput(h.break_start, '') : ''}
                           onChange={e => updateHorario(i, 'break_start', e.target.value)}
                         />
-                        <span style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
+                        <span className="hours-dash" style={{ color: '#94a3b8', textAlign: 'center' }}>–</span>
                         <input
+                          className="hours-close"
                           type="time"
                           value={h.break_end ? toTimeInput(h.break_end, '') : ''}
                           onChange={e => updateHorario(i, 'break_end', e.target.value)}
