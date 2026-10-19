@@ -43,7 +43,7 @@ export default function Bloqueado() {
         </button>
 
         <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #e2e8f0', textAlign: 'left' }}>
-          <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Dona do sistema? Use o código de liberação:</p>
+          <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Dona do sistema? Cole o convite de admin:</p>
           <UnlockAdminForm onUnlocked={() => refreshProfile?.()} />
         </div>
       </div>
