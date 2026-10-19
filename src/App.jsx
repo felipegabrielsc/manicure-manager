@@ -29,7 +29,7 @@ import Onboarding from './pages/Onboarding'
 import AppLayout from './components/AppLayout'
 import { SessionProfileContext } from './context/SessionProfile'
 import { checkPendingNotifications } from './utils/notifications'
-import { isSiteOwnerId } from './utils/siteOwner'
+import { assembleSessionProfile } from './utils/sessionProfile'
 
 const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, salon_owner_id, onboarding_done, last_seen_at, business_name, subscription_plans(name, price, features)'
 const PROFILE_SELECT_FALLBACK = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
@@ -55,39 +55,12 @@ export default function App() {
     }
 
     let assembled = data || null
-    const rawIsAdmin = assembled?.is_admin === true || isSiteOwnerId(userId)
-    if (assembled?.salon_owner_id && !rawIsAdmin) {
+    if (assembled?.salon_owner_id) {
       const { data: owner } = await supabase.from('profiles').select(PROFILE_SELECT).eq('id', assembled.salon_owner_id).single()
       const { data: sm } = await supabase.from('staff_members').select('id').eq('auth_user_id', userId).maybeSingle()
-      assembled = {
-        ...(owner || {}),
-        id: userId,
-        is_admin: false,
-        is_staff: true,
-        salon_owner_id: assembled.salon_owner_id,
-        workspace_id: assembled.salon_owner_id,
-        staff_member_id: sm?.id || null,
-        onboarding_done: true,
-        is_blocked: assembled.is_blocked === true || owner?.is_blocked === true,
-      }
-    } else if (assembled) {
-      assembled = {
-        ...assembled,
-        is_staff: false,
-        workspace_id: userId,
-      }
-    }
-
-    if (assembled && rawIsAdmin) {
-      assembled = { ...assembled, is_admin: true, is_staff: false }
-    } else if (!assembled && isSiteOwnerId(userId)) {
-      assembled = {
-        id: userId,
-        is_admin: true,
-        is_staff: false,
-        onboarding_done: true,
-        workspace_id: userId,
-      }
+      assembled = assembleSessionProfile(data, userId, { ownerRow: owner, staffMemberId: sm?.id })
+    } else {
+      assembled = assembleSessionProfile(assembled, userId)
     }
 
     setProfile(assembled)

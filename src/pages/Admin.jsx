@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 import { Users, Copy, ShieldCheck, ArrowLeft, DollarSign, TrendingUp, Wallet, Lock, Unlock, UserX, Mail, Crown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useSessionProfile } from '../context/SessionProfile'
-import { isSiteOwnerId } from '../utils/siteOwner'
+import UnlockAdminForm from '../components/UnlockAdminForm'
 
 export default function Admin() {
   const { profile } = useSessionProfile()
@@ -39,7 +39,7 @@ export default function Admin() {
     }
 
     const { data: perfil } = await supabase.from('profiles').select('is_admin').eq('id', user.id).maybeSingle()
-    const admin = !!(perfil?.is_admin || profile?.is_admin || isSiteOwnerId(user.id))
+    const admin = perfil?.is_admin === true
 
     if (admin) {
         setIsAdmin(true)
@@ -180,6 +180,9 @@ export default function Admin() {
                     </div>
                 </div>
                 <Link to="/" style={{color:'white', opacity:0.8}}><ArrowLeft/></Link>
+            </div>
+            <div style={{ marginTop: '16px', maxWidth: '360px' }}>
+              <UnlockAdminForm canCreate />
             </div>
         </div>
 

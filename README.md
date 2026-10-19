@@ -63,9 +63,10 @@ supabase/migrations/026_fix_appointment_id_bigint.sql
 supabase/migrations/027_planos_preco_e_galeria.sql
 supabase/migrations/028_perfil_planos_pacote_retorno.sql
 supabase/migrations/029_mp_billing_idempotency.sql
+supabase/migrations/030_admin_grants_e_rls.sql
 ```
 
-**Site novo:** rode **001–029** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** evita renovação duplicada no Mercado Pago (`pendente → aprovado`). Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–030** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** evita renovação duplicada no Mercado Pago (`pendente → aprovado`). A **030** desativa o código mestre de admin, passa a usar convite de uso único e impede um salão de ler o outro. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -135,6 +136,19 @@ Eventos de **pagamento**. Sem a função + token, o botão Assinar cai no link f
 O webhook **consulta a API oficial** (`GET /v1/payments/:id`) e só aplica o efeito financeiro uma vez por `mp_payment_id`. Notificação duplicada ou `pending` seguido de `approved` não gera duas assinaturas. Reembolso/`charged_back` cancela se aquele pagamento for o último ativo. Falha temporária da API responde **503** para o Mercado Pago tentar de novo. Rode a **029** e faça o deploy de `mp-webhook` de novo.
 
 **Trava de plano:** teste 14 dias (Agenda, Clientes, Serviços, Financeiro). Estoque, Fidelidade e Equipe exigem o plano **Pro**. Teste/assinatura vencidos mandam para `/planos`.
+
+## Admin da plataforma e isolamento (030)
+
+O código em `app_settings.admin_unlock_code` **não promove mais ninguém**. UUID no front também não. Admin é só `profiles.is_admin` no banco.
+
+| Papel | O que pode |
+|---|---|
+| Dona do salão | Agenda, clientes, financeiro, equipe e config do **próprio** `user_id` / workspace |
+| Profissional | Dados do salão em que entrou por convite de equipe; não vira admin; não abre Equipe/Config/Admin |
+| Visitante | Só RPCs públicos (perfil, agenda, marcar horário). Sem SELECT em clientes/financeiro/fotos em lote |
+| Admin da plataforma | Lista perfis, convites de cadastro, bloquear conta e plano. Gera **convite de admin** (2 dias, uso único) |
+
+**Recuperação** se não houver nenhum `is_admin`: no SQL Editor, `UPDATE profiles SET is_admin = true WHERE id = '…';` (JWT nulo ignora a trava). Ou a conta de salão mais antiga chama `bootstrap_primeiro_admin()` uma vez.
 
 ## Segurança da agenda pública (fase D)
 

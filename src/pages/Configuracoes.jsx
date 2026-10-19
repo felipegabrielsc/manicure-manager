@@ -8,7 +8,6 @@ import { exportClientsCsv } from '../utils/exportReport'
 import UnlockAdminForm from '../components/UnlockAdminForm'
 import PortfolioEditor from '../components/PortfolioEditor'
 import { useSessionProfile } from '../context/SessionProfile'
-import { isSiteOwnerId } from '../utils/siteOwner'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { driver } from "driver.js";
@@ -505,12 +504,15 @@ export default function Configuracoes() {
         </div>
 
         <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px dashed #cbd5e1', marginTop: '20px' }}>
-          <h3 style={{ marginTop: 0, fontSize: '16px' }}>Código de liberação (admin)</h3>
-          {profile?.is_admin || isSiteOwnerId(userId) ? (
-            <p style={{ color: '#16a34a', fontSize: '14px', margin: 0 }}>Esta conta já é administradora. O menu Admin aparece na barra lateral. <Link to="/admin">Abrir painel Admin</Link></p>
+          <h3 style={{ marginTop: 0, fontSize: '16px' }}>Admin da plataforma</h3>
+          {profile?.is_admin ? (
+            <>
+              <p style={{ color: '#16a34a', fontSize: '14px' }}>Esta conta já é administradora. <Link to="/admin">Abrir painel Admin</Link></p>
+              <UnlockAdminForm canCreate />
+            </>
           ) : (
             <>
-              <p style={{ color: '#64748b', fontSize: '13px' }}>Se você é a dona do sistema e perdeu o acesso, cole o código mestre. Isso não é o plano Pro — é só o painel de dono. O SQL 011 precisa ter sido executado no Supabase (o deploy da Vercel não faz isso).</p>
+              <p style={{ color: '#64748b', fontSize: '13px' }}>O código mestre não existe mais. Cole um convite gerado por quem já é admin. Rode o SQL 030 no Supabase.</p>
               <UnlockAdminForm onUnlocked={() => refreshProfile?.()} />
             </>
           )}

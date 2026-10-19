@@ -20,7 +20,6 @@ import { supabase } from '../supabaseClient'
 import { useSessionProfile } from '../context/SessionProfile'
 import { hasFeature, FEATURE_BY_PATH } from '../utils/entitlements'
 import PlanGate from './PlanGate'
-import { isSiteOwnerId } from '../utils/siteOwner'
 import Modal from './Modal'
 
 const NAV_ITEMS = [
@@ -66,10 +65,6 @@ export default function AppLayout() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
       if (!cancelled) setLoginEmail(user.email || '')
-      if (isSiteOwnerId(user.id)) {
-        if (!cancelled) setAdminFromDb(true)
-        return
-      }
       const { data } = await supabase.from('profiles').select('is_admin').eq('id', user.id).maybeSingle()
       if (!cancelled) setAdminFromDb(!!data?.is_admin)
     })

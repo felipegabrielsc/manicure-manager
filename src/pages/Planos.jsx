@@ -164,7 +164,7 @@ export default function Planos() {
 
         {!profile?.is_admin && (
           <div style={{ marginTop: '28px', padding: '16px', background: 'white', borderRadius: '12px', border: '1px dashed #cbd5e1' }}>
-            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Dona do sistema? Código de liberação de admin:</p>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 8px' }}>Convite de admin da plataforma (não é o plano Pro):</p>
             <UnlockAdminForm onUnlocked={() => refreshProfile?.()} />
           </div>
         )}
