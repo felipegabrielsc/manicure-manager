@@ -118,13 +118,14 @@ export function validateBookingSlot({
   servicesMap = {},
   excludeAppointmentId = null,
   staffId = null,
+  now = new Date(),
 }) {
   const start = new Date(startTime)
   if (Number.isNaN(start.getTime())) {
     return { valid: false, reason: 'Data/hora inválida.' }
   }
 
-  if (start < new Date()) {
+  if (start < now) {
     return { valid: false, reason: 'Não é possível agendar no passado.' }
   }
 

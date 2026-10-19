@@ -5,16 +5,16 @@ import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Calendar, User, Scissors, CheckCircle, AlertCircle, Save } from 'lucide-react'
 import SelectBusca from '../components/SelectBusca'
 import toast from 'react-hot-toast'
-import {
-  fetchSchedulingContext,
-  validateBookingSlot,
-  getServiceDuration,
-} from '../utils/scheduling'
+import { getServiceDuration } from '../utils/scheduling'
+import { criarAgendamento } from '../application/appointmentService'
 
 import { calcularDesconto } from '../utils/exportReport'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 export default function NovoAgendamento() {
   const navigate = useNavigate()
+  const { profile } = useSessionProfile()
   const [loading, setLoading] = useState(false)
   const [userId, setUserId] = useState(null)
 
@@ -35,7 +35,7 @@ export default function NovoAgendamento() {
     async function fetchDados() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
-      setUserId(user.id)
+      setUserId(workspaceId(profile, user.id))
 
       const [{ data: c }, { data: s }, { data: st }, { data: loc }] = await Promise.all([
         supabase.from('clients').select('*').order('name'),
@@ -51,7 +51,7 @@ export default function NovoAgendamento() {
       if (defaultLoc) setSelectedLocationId(defaultLoc.id)
     }
     fetchDados()
-  }, [])
+  }, [profile])
 
   const clienteSelecionado = clientes.find(c => c.id == selectedClienteId)
   const servicoSelecionado = servicos.find(s => s.id == selectedServicoId)
@@ -96,68 +96,23 @@ export default function NovoAgendamento() {
 
     setLoading(true)
     const startTime = new Date(dataHora)
-    const durationMinutes = getServiceDuration(servicoSelecionado)
-
-    const ctx = await fetchSchedulingContext(supabase, userId, startTime)
-    const validation = validateBookingSlot({
+    const result = await criarAgendamento(supabase, {
+      workspaceId: userId,
+      clientId: selectedClienteId,
+      serviceId: selectedServicoId,
       startTime,
-      durationMinutes,
-      businessHours: ctx.businessHours,
-      appointments: ctx.appointments,
-      blockedSlots: ctx.blockedSlots,
+      durationMinutes: getServiceDuration(servicoSelecionado),
       staffId: selectedStaffId || null,
+      locationId: selectedLocationId || null,
+      agreedPrice: precoComDesconto,
+      couponId: cupomAplicado?.coupon_id || null,
+      discountApplied: descontoPreview || 0,
+      clientName: clienteSelecionado?.name,
     })
-
-    if (!validation.valid) {
-      setLoading(false)
-      return toast.error(validation.reason)
-    }
-
-    let { data: rpcCheck, error: rpcErr } = await supabase.rpc('validar_horario_agendamento', {
-      p_user_id: userId,
-      p_start_time: startTime.toISOString(),
-      p_duration_minutes: durationMinutes,
-      p_staff_id: selectedStaffId || null,
-    })
-    if (rpcErr) {
-      const retry = await supabase.rpc('validar_horario_agendamento', {
-        p_user_id: userId,
-        p_start_time: startTime.toISOString(),
-        p_duration_minutes: durationMinutes,
-      })
-      rpcCheck = retry.data
-      rpcErr = retry.error
-    }
-
-    if (!rpcErr && rpcCheck?.valid === false) {
-      setLoading(false)
-      return toast.error(rpcCheck.reason || 'Horário indisponível.')
-    }
-
-    const precoFinal = precoComDesconto
-
-    const { error } = await supabase.from('appointments').insert({
-      client_id: selectedClienteId,
-      service_id: selectedServicoId,
-      start_time: startTime.toISOString(),
-      agreed_price: precoFinal,
-      status: 'AGENDADO',
-      user_id: userId,
-      staff_id: selectedStaffId || null,
-      location_id: selectedLocationId || null,
-      coupon_id: cupomAplicado?.coupon_id || null,
-      discount_applied: descontoPreview || 0,
-    })
-
-    if (!error && cupomAplicado?.coupon_id) {
-      const { data: cup } = await supabase.from('coupons').select('uses_count').eq('id', cupomAplicado.coupon_id).single()
-      await supabase.from('coupons').update({ uses_count: (cup?.uses_count || 0) + 1 }).eq('id', cupomAplicado.coupon_id)
-    }
-
     setLoading(false)
 
-    if (error) {
-      toast.error('Erro ao agendar: ' + error.message)
+    if (!result.ok) {
+      toast.error(result.error || 'Erro ao agendar')
     } else {
       toast.success('Agendamento realizado!')
       navigate('/')

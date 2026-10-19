@@ -8,3 +8,16 @@ verify_jwt = true
 
 [functions.push-dispatch]
 verify_jwt = false
+
+# O navegador chama whatsapp-connect. Com JWT na porta de entrada, o OPTIONS
+# volta 401 sem CORS e o Chrome mostra "preflight doesn't pass". O usuário
+# logado é conferido dentro da função.
+[functions.whatsapp-connect]
+verify_jwt = false
+
+# Cron e webhook autenticam com segredo próprio, não com JWT de usuário.
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.notification-dispatch]
+verify_jwt = false

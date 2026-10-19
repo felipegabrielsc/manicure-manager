@@ -63,10 +63,18 @@ supabase/migrations/026_fix_appointment_id_bigint.sql
 supabase/migrations/027_planos_preco_e_galeria.sql
 supabase/migrations/028_perfil_planos_pacote_retorno.sql
 supabase/migrations/029_mp_billing_idempotency.sql
-supabase/migrations/030_admin_grants_e_rls.sql
+supabase/migrations/029_workspace_followup_portfolio.sql
+supabase/migrations/030_notifications.sql
+supabase/migrations/031_whatsapp_connections.sql
+supabase/migrations/032_notification_automations.sql
+supabase/migrations/033_fix_enqueue_client_id.sql
+supabase/migrations/034_assistant_and_observability.sql
+supabase/migrations/035_skip_past_reminders.sql
+supabase/migrations/036_public_booking_rate_limit.sql
+supabase/migrations/037_admin_grants_e_rls.sql
 ```
 
-**Site novo:** rode **001–030** nesta ordem. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029** evita renovação duplicada no Mercado Pago (`pendente → aprovado`). A **030** desativa o código mestre de admin, passa a usar convite de uso único e impede um salão de ler o outro. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–036** e a **037**. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin, passa a usar convite de uso único e impede um salão de ler o outro. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -137,7 +145,7 @@ O webhook **consulta a API oficial** (`GET /v1/payments/:id`) e só aplica o efe
 
 **Trava de plano:** teste 14 dias (Agenda, Clientes, Serviços, Financeiro). Estoque, Fidelidade e Equipe exigem o plano **Pro**. Teste/assinatura vencidos mandam para `/planos`.
 
-## Admin da plataforma e isolamento (030)
+## Admin da plataforma e isolamento (037)
 
 O código em `app_settings.admin_unlock_code` **não promove mais ninguém**. UUID no front também não. Admin é só `profiles.is_admin` no banco.
 
@@ -178,7 +186,31 @@ supabase secrets set CRON_SECRET=uma-senha-longa
 
 `https://SEU_PROJETO.supabase.co/functions/v1/push-dispatch`
 
-6. No celular: instale o PWA e ative em **Configurações → Notificações Push**
+6. Fila da etapa 4, depois de colar a **030**:
+
+```bash
+supabase functions deploy notification-dispatch
+supabase functions deploy push-dispatch
+```
+
+O `notification-dispatch` usa o mesmo `CRON_SECRET`. Agende a cada minuto. Ele manda o push. O WhatsApp sai por ele quando a conexão está `connected`. Sem gateway, a linha fica `pending` com `no_connection` e a agenda abre normalmente. O `push-dispatch` redeployado não repete um push que já está nessa fila.
+
+7. WhatsApp automático, com o gateway fora deste repositório:
+
+```bash
+supabase functions deploy whatsapp-connect
+supabase functions deploy whatsapp-webhook
+supabase functions deploy notification-dispatch
+supabase secrets set WA_AKG_URL=https://seu-gateway
+supabase secrets set WA_AKG_API_KEY=wag_sua_chave
+supabase secrets set WHATSAPP_WEBHOOK_SECRET=uma-senha-longa
+```
+
+O `config.toml` deixa `verify_jwt = false` nessas três funções. O deploy tem de ser com o CLI, na raiz do repositório, no projeto `fkgmapnuzphaleuyffkq`. Publicar a Vercel não cria função. Se o botão Conectar mostrar *Failed to send a request to the Edge Function* ou *preflight doesn't pass*, a função ainda não existe nesse projeto: o OPTIONS responde 404.
+
+Não coloque `WA_AKG_API_KEY` em variável `VITE_` nem na Vercel do site. Sem esses três secrets o botão Conectar avisa que o gateway não está configurado e nenhum texto automático sai.
+
+8. No celular: instale o PWA e ative em **Configurações → Notificações Push**
 
 A agenda mostra o nome da profissional e deixa filtrar. Duas profissionais podem ocupar o mesmo horário; conflito só na mesma pessoa (ou se o horário não tiver profissional).
 

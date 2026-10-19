@@ -1,5 +1,5 @@
 -- Etapas 2 e 3: admin por convite (não código mestre) e isolamento entre salões.
--- Cole no SQL Editor DEPOIS da 029. Não reescreve 010/011. Não aplica sozinho na Vercel.
+-- Cole no SQL Editor DEPOIS da 036. Não reescreve 010/011. Não aplica sozinho na Vercel.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 

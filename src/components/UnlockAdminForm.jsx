@@ -13,7 +13,7 @@ export default function UnlockAdminForm({ onUnlocked, canCreate = false }) {
     const { data, error } = await supabase.rpc('criar_convite_admin')
     setLoading(false)
     if (error || !data?.ok) {
-      return toast.error(data?.reason || error?.message || 'Não foi possível gerar o convite. Rode o SQL 030.')
+      return toast.error(data?.reason || error?.message || 'Não foi possível gerar o convite. Rode o SQL 037.')
     }
     try {
       await navigator.clipboard.writeText(data.token)
@@ -31,7 +31,7 @@ export default function UnlockAdminForm({ onUnlocked, canCreate = false }) {
     const { data, error } = await supabase.rpc('ativar_admin_com_convite', { p_token: token })
     setLoading(false)
     if (error || !data?.ok) {
-      return toast.error(data?.reason || 'Convite inválido. Rode o SQL 030 no Supabase.')
+      return toast.error(data?.reason || 'Convite inválido. Rode o SQL 037 no Supabase.')
     }
     toast.success('Acesso de administrador liberado.')
     if (onUnlocked) await onUnlocked()

@@ -8,9 +8,13 @@ import { dailyCompare, sliceUntilDay, classifyNewVsReturning, topClientsByVisits
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { exportToCsv, exportToPrint } from '../utils/exportReport'
-import { formatCivilDate, money, monthRangeLocal, monthlyDueDate, toDateInputValue } from '../utils/dates'
+import { formatCivilDate, money, monthRangeLocal, toDateInputValue } from '../utils/dates'
+import { cobrancasMensalidade, idsMensalidadePaga, mensalidadeJaLancada } from '../application/mensalidade'
 import toast from 'react-hot-toast'
 import { openWhatsApp } from '../utils/whatsapp'
+import { marcarEnvioManual } from '../application/notificationService'
+import { useSessionProfile } from '../context/SessionProfile'
+import { workspaceId } from '../utils/workspace'
 
 const METODOS = ['PIX', 'DINHEIRO', 'CARTAO']
 const FILTRO_LABEL = {
@@ -30,6 +34,7 @@ function categoriaDe(m) {
 }
 
 export default function Financeiro() {
+  const { profile } = useSessionProfile()
   const [loading, setLoading] = useState(true)
   const [dataAtual, setDataAtual] = useState(new Date())
   const [todasMovimentacoes, setTodasMovimentacoes] = useState([])
@@ -130,9 +135,7 @@ export default function Financeiro() {
     const { data: itens } = await supabase.from('inventory_items').select('*').order('name')
     setEstoque(itens || [])
 
-    const idsPagosNoMes = transacoes
-      ?.filter(t => t.type === 'RECEITA' && t.client_id)
-      .map(t => t.client_id) || []
+    const idsPagosNoMes = idsMensalidadePaga(transacoes)
 
     const agendaFormatada = agendamentos
       ?.filter(a => Number(a.agreed_price) > 0 && a.payment_method !== 'MENSALIDADE' && a.payment_method !== 'PACOTE')
@@ -160,51 +163,13 @@ export default function Financeiro() {
     listaFinal.sort((a, b) => String(b.date).localeCompare(String(a.date)))
     setTodasMovimentacoes(listaFinal)
 
-    const viewY = dataAtual.getFullYear()
-    const viewM = dataAtual.getMonth()
-    const porCliente = {}
-
-    ;(agendamentosCobranca || []).forEach(a => {
-      const c = a.clients
-      if (!c?.id) return
-      const ehMensal = a.payment_method === 'MENSALIDADE' || c.type === 'MENSALISTA'
-      if (!ehMensal) return
-      const dueDay = c.monthly_due_day || 10
-      const offset = c.monthly_due_offset == null ? 1 : Number(c.monthly_due_offset)
-      const aptDate = new Date(a.start_time)
-      const due = monthlyDueDate(aptDate.getFullYear(), aptDate.getMonth(), dueDay, offset)
-      if (due.getFullYear() !== viewY || due.getMonth() !== viewM) return
-      if (!porCliente[c.id]) {
-        porCliente[c.id] = {
-          ...c,
-          servicosFeitos: 0,
-          valorServicos: 0,
-          vencimento: due,
-        }
-      }
-      porCliente[c.id].servicosFeitos += 1
-      porCliente[c.id].valorServicos += Number(a.agreed_price) || 0
-    })
-
     const { data: clientesMensais } = await supabase.from('clients').select('*').eq('type', 'MENSALISTA')
-    ;(clientesMensais || []).forEach(c => {
-      if (porCliente[c.id]) return
-      const dueDay = c.monthly_due_day || 10
-      const offset = c.monthly_due_offset == null ? 1 : Number(c.monthly_due_offset)
-      const svc = new Date(viewY, viewM - offset, 1)
-      const due = monthlyDueDate(svc.getFullYear(), svc.getMonth(), dueDay, offset)
-      if (due.getFullYear() !== viewY || due.getMonth() !== viewM) return
-      porCliente[c.id] = { ...c, servicosFeitos: 0, valorServicos: 0, vencimento: due }
-    })
-
-    setMensalistasPendentes(
-      Object.values(porCliente)
-        .filter(c => !idsPagosNoMes.includes(c.id))
-        .map(c => ({
-          ...c,
-          monthly_fee: c.monthly_fee || (c.valorServicos > 0 ? c.valorServicos : null),
-        }))
-    )
+    setMensalistasPendentes(cobrancasMensalidade({
+      appointments: agendamentosCobranca,
+      clients: clientesMensais,
+      viewDate: dataAtual,
+      paidClientIds: idsPagosNoMes,
+    }))
 
     const porStaff = {}
     ;(agendamentos || []).forEach(a => {
@@ -330,7 +295,7 @@ export default function Financeiro() {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
       const { data: goal } = await supabase.from('financial_goals').select('target_amount')
-        .eq('user_id', user.id)
+        .eq('user_id', workspaceId(profile, user.id))
         .eq('year', dataAtual.getFullYear())
         .eq('month', dataAtual.getMonth() + 1)
         .maybeSingle()
@@ -345,7 +310,7 @@ export default function Financeiro() {
     if (!valorMeta || valorMeta <= 0) return toast.error('Informe um valor válido')
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.from('financial_goals').upsert({
-      user_id: user.id,
+      user_id: workspaceId(profile, user.id),
       year: dataAtual.getFullYear(),
       month: dataAtual.getMonth() + 1,
       target_amount: valorMeta,
@@ -411,17 +376,18 @@ export default function Financeiro() {
     setShowForm(true)
   }
 
-  function cobrarWhatsApp(cliente) {
-    const valor = cliente.monthly_fee || cliente.valorServicos || 0
+  async function cobrarWhatsApp(cliente) {
+    const valor = cliente.valorCobrar || 0
     const venc = cliente.vencimento ? cliente.vencimento.toLocaleDateString('pt-BR') : `dia ${cliente.monthly_due_day || 10}`
     const ok = openWhatsApp(cliente.phone, `Oi ${cliente.name}! Sua mensalidade vence em ${venc}, no valor de R$ ${money(valor)}. Pode pagar por PIX quando puder 💜`)
-    if (!ok) toast.error('Cliente sem WhatsApp no cadastro')
+    if (!ok) return toast.error('Cliente sem WhatsApp no cadastro')
+    await marcarEnvioManual(supabase, { clientId: cliente.id, types: ['payment_reminder'] }).catch(() => {})
   }
 
   function abrirCobrancaRapida(cliente) {
     setTipoLancamento('RECEITA_MENSAL')
     setDesc(`Mensalidade ${cliente.name}`)
-    setValor(cliente.monthly_fee ? String(cliente.monthly_fee) : (cliente.valorServicos ? String(cliente.valorServicos) : ''))
+    setValor(cliente.valorCobrar ? String(cliente.valorCobrar) : '')
     setClientIdVinculado(cliente.id)
     setItemVendaId('')
     setMetodoPagamento('PIX')
@@ -461,8 +427,16 @@ export default function Financeiro() {
       description = `Venda: ${item.name} × ${qtd}`
       inventoryItemId = item.id
       quantity = qtd
-    } else if (tipoLancamento === 'RECEITA_MENSAL') {
+    } else     if (tipoLancamento === 'RECEITA_MENSAL') {
       if (!description || !amount) return toast.error('Preencha descrição e valor')
+      const { data: recebidas } = await supabase
+        .from('transactions')
+        .select('id, date, type, category, description, client_id')
+        .eq('client_id', clientIdVinculado)
+        .eq('type', 'RECEITA')
+      if (mensalidadeJaLancada(recebidas, clientIdVinculado, dataLancamento)) {
+        return toast.error('Essa mensalidade já foi recebida neste mês.')
+      }
       category = 'mensalidade'
       type = 'RECEITA'
     } else if (tipoLancamento === 'RECEITA') {
@@ -481,7 +455,7 @@ export default function Financeiro() {
       type,
       date: new Date(`${dataLancamento}T12:00:00`).toISOString(),
       client_id: clientIdVinculado,
-      user_id: user.id,
+      user_id: workspaceId(profile, user.id),
       category,
       payment_method: type === 'RECEITA' ? metodoPagamento : (metodoPagamento || null),
       inventory_item_id: inventoryItemId,
@@ -682,15 +656,14 @@ export default function Financeiro() {
             <h3 style={{ color: '#6610f2', borderBottom: '2px solid #6610f2', paddingBottom: '5px' }}>Mensalidades a Receber</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {mensalistasPendentes.map(cliente => (
-                <div key={cliente.id} style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #d8b4fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={cliente.id} style={{ background: 'white', padding: '15px', borderRadius: '8px', border: '1px solid #d8b4fe', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <div>
                     <strong style={{ display: 'block', color: '#4a044e' }}>{cliente.name}</strong>
                     <small style={{ color: '#666', display: 'block' }}>
                       Vence em {cliente.vencimento ? cliente.vencimento.toLocaleDateString('pt-BR') : `dia ${cliente.monthly_due_day || 10}`}
                     </small>
                     <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 'bold' }}>
-                      {cliente.servicosFeitos} serviço(s) no ciclo
-                      {cliente.monthly_fee ? ` · R$ ${money(cliente.monthly_fee)}` : ''}
+                      {cliente.servicosFeitos} visita(s) na mensalidade · R$ {money(cliente.valorCobrar)}
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
