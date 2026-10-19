@@ -1,18 +1,111 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 import { json } from '../_shared/cors.ts'
-
-function parseExternalRef(ref: string | null | undefined) {
-  if (!ref) return { userId: null as string | null, planId: null as string | null }
-  const [userId, planId] = String(ref).split('|')
-  return { userId: userId || null, planId: planId || null }
-}
+import {
+  billingAction,
+  computeExpiryIso,
+  planPeriodDays,
+  resolvePayer,
+} from '../_shared/mpBilling.js'
 
 async function fetchPayment(mpToken: string, paymentId: string) {
   const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
     headers: { Authorization: `Bearer ${mpToken}` },
   })
-  if (!res.ok) return null
-  return await res.json()
+  if (res.status === 404) return { missing: true as const, payment: null, retry: false }
+  if (!res.ok) return { missing: false, payment: null, retry: true }
+  return { missing: false, payment: await res.json(), retry: false }
+}
+
+function logSafe(message: string, extra: Record<string, unknown> = {}) {
+  console.error(JSON.stringify({ message, ...extra }))
+}
+
+async function upsertEvent(admin: ReturnType<typeof createClient>, payment: Record<string, unknown>) {
+  const pid = String(payment.id)
+  const { data: existing } = await admin
+    .from('billing_events')
+    .select('id, effect, effect_applied_at, notification_count, user_id, plan_id')
+    .eq('mp_payment_id', pid)
+    .maybeSingle()
+
+  const payload = {
+    id: payment.id,
+    status: payment.status,
+    status_detail: payment.status_detail,
+    external_reference: payment.external_reference,
+    metadata: payment.metadata,
+    date_approved: payment.date_approved,
+    transaction_amount: payment.transaction_amount,
+  }
+
+  if (!existing) {
+    const { data, error } = await admin.from('billing_events').insert({
+      mp_payment_id: pid,
+      status: payment.status,
+      payload,
+      notification_count: 1,
+      last_seen_at: new Date().toISOString(),
+      effect: 'none',
+    }).select('id, effect, effect_applied_at, notification_count, user_id, plan_id').single()
+
+    if (error?.code === '23505') {
+      const { data: again } = await admin
+        .from('billing_events')
+        .select('id, effect, effect_applied_at, notification_count, user_id, plan_id')
+        .eq('mp_payment_id', pid)
+        .maybeSingle()
+      return again
+    }
+    if (error) throw error
+    return data
+  }
+
+  const { data, error } = await admin.from('billing_events').update({
+    status: payment.status,
+    payload,
+    notification_count: (existing.notification_count || 1) + 1,
+    last_seen_at: new Date().toISOString(),
+  }).eq('mp_payment_id', pid).select('id, effect, effect_applied_at, notification_count, user_id, plan_id').single()
+
+  if (error) throw error
+  return data
+}
+
+async function claimActivation(
+  admin: ReturnType<typeof createClient>,
+  paymentId: string,
+  extra: Record<string, unknown>,
+) {
+  const { data, error } = await admin.from('billing_events').update({
+    effect: 'activated',
+    effect_applied_at: new Date().toISOString(),
+    ...extra,
+  }).eq('mp_payment_id', paymentId).is('effect_applied_at', null).select('id')
+
+  if (error) {
+    if (/effect/i.test(error.message)) {
+      throw new Error('Rode o SQL 029 no Supabase (idempotência MP).')
+    }
+    throw error
+  }
+  return Array.isArray(data) && data.length > 0
+}
+
+async function claimRefund(admin: ReturnType<typeof createClient>, paymentId: string, status: string) {
+  const { data, error } = await admin.from('billing_events').update({
+    effect: 'refunded',
+    status,
+  }).eq('mp_payment_id', paymentId).eq('effect', 'activated').select('id')
+
+  if (error) throw error
+  return Array.isArray(data) && data.length > 0
+}
+
+async function releaseActivation(admin: ReturnType<typeof createClient>, paymentId: string) {
+  await admin.from('billing_events').update({
+    effect: 'none',
+    effect_applied_at: null,
+  }).eq('mp_payment_id', paymentId)
 }
 
 Deno.serve(async (req) => {
@@ -44,70 +137,108 @@ Deno.serve(async (req) => {
       return json({ ok: true, ignored: 'sem payment id' })
     }
 
-    const payment = await fetchPayment(mpToken, String(paymentId))
-    if (!payment) {
-      return json({ ok: false, reason: 'Pagamento não encontrado no Mercado Pago.' }, 404)
+    const fetched = await fetchPayment(mpToken, String(paymentId))
+    if (fetched.retry) {
+      logSafe('mp_api_retry', { paymentId: String(paymentId) })
+      return json({ ok: false, reason: 'API Mercado Pago indisponível.' }, 503)
+    }
+    if (fetched.missing || !fetched.payment) {
+      return json({ ok: true, ignored: 'pagamento inexistente' })
     }
 
+    const payment = fetched.payment
     const admin = createClient(supabaseUrl, serviceKey)
-    const { error: insertErr } = await admin.from('billing_events').insert({
-      mp_payment_id: String(payment.id),
-      status: payment.status,
-      payload: payment,
-    })
+    const row = await upsertEvent(admin, payment)
+    const action = billingAction(payment.status)
+    const payer = resolvePayer(payment)
 
-    if (insertErr && insertErr.code !== '23505') {
-      console.error(insertErr)
-      return json({ ok: false, reason: 'Falha ao registrar evento.' }, 500)
-    }
-    if (insertErr?.code === '23505') {
-      return json({ ok: true, duplicate: true })
+    if (action === 'wait' || action === 'reject') {
+      return json({ ok: true, status: payment.status, effect: row?.effect || 'none' })
     }
 
-    if (payment.status !== 'approved') {
-      await admin.from('billing_events').update({ status: payment.status }).eq('mp_payment_id', String(payment.id))
-      return json({ ok: true, status: payment.status })
+    if (action === 'activate') {
+      if (row?.effect === 'activated') {
+        return json({ ok: true, duplicate: true, effect: 'activated' })
+      }
+      if (row?.effect === 'refunded') {
+        return json({ ok: true, duplicate: true, effect: 'refunded' })
+      }
+      if (!payer.userId) {
+        return json({ ok: true, ignored: 'sem user_id' })
+      }
+
+      const claimed = await claimActivation(admin, String(payment.id), {
+        user_id: payer.userId,
+        plan_id: payer.planId || null,
+        status: 'approved',
+      })
+      if (!claimed) {
+        return json({ ok: true, duplicate: true, effect: 'activated' })
+      }
+
+      try {
+        const { data: plan } = payer.planId
+          ? await admin.from('subscription_plans').select('interval_type').eq('id', payer.planId).maybeSingle()
+          : { data: null }
+        const days = planPeriodDays(plan?.interval_type)
+        const { data: prof } = await admin
+          .from('profiles')
+          .select('subscription_status, subscription_expires_at, plan_id')
+          .eq('id', payer.userId)
+          .maybeSingle()
+
+        const stackFrom = prof?.subscription_status === 'active' ? prof.subscription_expires_at : null
+        const expires = computeExpiryIso(new Date(), stackFrom, days)
+
+        const { error: updErr } = await admin.from('profiles').update({
+          plan_id: payer.planId || prof?.plan_id || null,
+          subscription_status: 'active',
+          subscription_expires_at: expires,
+          is_blocked: false,
+          mp_last_payment_id: String(payment.id),
+        }).eq('id', payer.userId)
+
+        if (updErr) throw updErr
+        return json({ ok: true, activated: payer.userId, duplicate: false })
+      } catch (err) {
+        await releaseActivation(admin, String(payment.id))
+        throw err
+      }
     }
 
-    const meta = payment.metadata || {}
-    const fromRef = parseExternalRef(payment.external_reference)
-    const userId = meta.user_id || meta.userId || fromRef.userId
-    const planId = meta.plan_id || meta.planId || fromRef.planId
+    if (action === 'refund') {
+      if (row?.effect === 'refunded') {
+        return json({ ok: true, duplicate: true, effect: 'refunded' })
+      }
+      if (row?.effect !== 'activated') {
+        return json({ ok: true, effect: 'ignored', status: payment.status })
+      }
 
-    if (!userId) {
-      return json({ ok: false, reason: 'Pagamento sem user_id.' }, 400)
+      const claimed = await claimRefund(admin, String(payment.id), String(payment.status))
+      if (!claimed) {
+        return json({ ok: true, duplicate: true, effect: 'refunded' })
+      }
+
+      try {
+        const userId = payer.userId || row.user_id
+        if (userId) {
+          await admin.from('profiles').update({
+            subscription_status: 'cancelled',
+          }).eq('id', userId).eq('mp_last_payment_id', String(payment.id))
+        }
+        return json({ ok: true, effect: 'refunded' })
+      } catch (err) {
+        await admin.from('billing_events').update({
+          effect: 'activated',
+        }).eq('mp_payment_id', String(payment.id)).eq('effect', 'refunded')
+        throw err
+      }
     }
 
-    const expires = new Date()
-    let days = 31
-    if (planId) {
-      const { data: plan } = await admin.from('subscription_plans').select('interval_type').eq('id', planId).maybeSingle()
-      if (plan?.interval_type === 'yearly' || plan?.interval_type === 'year') days = 365
-    }
-    expires.setDate(expires.getDate() + days)
-
-    const { error: updErr } = await admin.from('profiles').update({
-      plan_id: planId || null,
-      subscription_status: 'active',
-      subscription_expires_at: expires.toISOString(),
-      is_blocked: false,
-      mp_last_payment_id: String(payment.id),
-    }).eq('id', userId)
-
-    if (updErr) {
-      console.error(updErr)
-      return json({ ok: false, reason: 'Falha ao ativar plano.' }, 500)
-    }
-
-    await admin.from('billing_events').update({
-      user_id: userId,
-      plan_id: planId || null,
-      status: 'approved',
-    }).eq('mp_payment_id', String(payment.id))
-
-    return json({ ok: true, activated: userId })
+    return json({ ok: true, status: payment.status })
   } catch (err) {
-    console.error(err)
-    return json({ ok: false, reason: 'Erro no webhook.' }, 500)
+    const message = err instanceof Error ? err.message : 'Erro no webhook.'
+    logSafe('mp_webhook_error', { reason: message })
+    return json({ ok: false, reason: message }, 500)
   }
 })
