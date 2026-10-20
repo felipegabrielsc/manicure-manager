@@ -2,15 +2,16 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabaseClient'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Calendar, User, Scissors, CheckCircle, AlertCircle, Save } from 'lucide-react'
+import { ArrowLeft, Calendar, User, Scissors, CheckCircle, AlertCircle, Save, Clock } from 'lucide-react'
 import SelectBusca from '../components/SelectBusca'
 import toast from 'react-hot-toast'
-import { getServiceDuration } from '../utils/scheduling'
+import { fetchSchedulingContext, generateAvailableSlots, getServiceDuration } from '../utils/scheduling'
 import { criarAgendamento } from '../application/appointmentService'
 
 import { calcularDesconto } from '../utils/exportReport'
 import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId } from '../utils/workspace'
+import { toDateInputValue, toLocalDatetimeInput } from '../utils/dates'
 
 export default function NovoAgendamento() {
   const navigate = useNavigate()
@@ -30,6 +31,9 @@ export default function NovoAgendamento() {
   const [cupomCodigo, setCupomCodigo] = useState('')
   const [cupomAplicado, setCupomAplicado] = useState(null)
   const [dataHora, setDataHora] = useState('')
+  const [dataDia, setDataDia] = useState(toDateInputValue())
+  const [slots, setSlots] = useState([])
+  const [carregandoSlots, setCarregandoSlots] = useState(false)
 
   useEffect(() => {
     async function fetchDados() {
@@ -62,6 +66,31 @@ export default function NovoAgendamento() {
     ? calcularDesconto(precoPreview, cupomAplicado.discount_type, cupomAplicado.discount_value)
     : 0
   const precoComDesconto = isMensalista ? 0 : Math.max(0, precoPreview - descontoPreview)
+
+  useEffect(() => {
+    if (!dataDia || !selectedServicoId || !userId) {
+      setSlots([])
+      return
+    }
+    let cancelled = false
+    async function loadSlots() {
+      setCarregandoSlots(true)
+      const dateObj = new Date(`${dataDia}T12:00:00`)
+      const ctx = await fetchSchedulingContext(supabase, userId, dateObj)
+      const bookable = generateAvailableSlots({
+        date: dateObj,
+        durationMinutes: duracaoPreview,
+        businessHours: ctx.businessHours,
+        appointments: ctx.appointments,
+        blockedSlots: ctx.blockedSlots,
+        staffId: selectedStaffId || null,
+      })
+      if (!cancelled) setSlots(bookable)
+      setCarregandoSlots(false)
+    }
+    loadSlots()
+    return () => { cancelled = true }
+  }, [dataDia, selectedServicoId, selectedStaffId, userId, duracaoPreview])
 
   async function aplicarCupom() {
     if (!cupomCodigo || !userId) return
@@ -157,12 +186,47 @@ export default function NovoAgendamento() {
               <Calendar size={20} color="#2563eb" />
               <span>Quando?</span>
             </div>
-            <input type="datetime-local" value={dataHora} onChange={e => setDataHora(e.target.value)} required style={inputStyle} />
+            <input
+              type="date"
+              value={dataDia}
+              onChange={e => { setDataDia(e.target.value); setDataHora('') }}
+              required
+              style={inputStyle}
+            />
             {selectedServicoId && (
               <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#64748b' }}>
                 Duração estimada: {duracaoPreview} minutos
               </p>
             )}
+            {selectedServicoId && (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ ...labelHeaderStyle, marginBottom: '8px' }}>
+                  <Clock size={18} color="#2563eb" />
+                  <span>Horários livres</span>
+                </div>
+                {carregandoSlots ? (
+                  <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>Carregando horários...</p>
+                ) : slots.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: '13px', color: '#dc2626' }}>Nenhum horário livre neste dia. Confira o expediente em Configurações.</p>
+                ) : (
+                  <div className="slot-grid">
+                    {slots.map(slot => (
+                      <button
+                        key={slot.value}
+                        type="button"
+                        disabled={slot.disabled}
+                        className={`slot-chip${slot.kind === 'busy' ? ' is-busy' : ''}${dataHora === toLocalDatetimeInput(slot.start) ? ' is-on' : ''}`}
+                        onClick={() => !slot.disabled && setDataHora(toLocalDatetimeInput(slot.start))}
+                      >
+                        {slot.kind === 'busy' ? `${slot.label} ocupado` : slot.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <label style={{ display: 'block', marginTop: '12px', fontSize: '12px', color: '#64748b' }}>Ou escolha data e hora manualmente</label>
+            <input type="datetime-local" value={dataHora} onChange={e => { setDataHora(e.target.value); if (e.target.value) setDataDia(e.target.value.slice(0, 10)) }} required style={{ ...inputStyle, marginTop: '6px' }} />
           </div>
 
           {(staffList.length > 0 || locations.length > 0) && (

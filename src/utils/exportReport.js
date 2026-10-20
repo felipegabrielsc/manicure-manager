@@ -73,6 +73,33 @@ export function exportToPrint(movimentacoes, mesFormatado, totais) {
   w.document.close()
 }
 
+export function exportAppointmentsCsv(appointments, mesFormatado) {
+  const header = ['Data', 'Hora', 'Cliente', 'Serviço', 'Status', 'Pagamento', 'Valor (R$)', 'Sinal']
+  const rows = (appointments || []).map((a) => {
+    const start = a.start_time ? new Date(a.start_time) : null
+    return [
+      start ? start.toLocaleDateString('pt-BR') : '',
+      start ? start.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '',
+      `"${String(a.clients?.name || '').replace(/"/g, '""')}"`,
+      `"${String(a.services?.name || '').replace(/"/g, '""')}"`,
+      a.status || '',
+      a.payment_method || '',
+      (Number(a.agreed_price) || 0).toFixed(2).replace('.', ','),
+      a.deposit_status === 'paid' || a.deposit_status === 'applied'
+        ? (Number(a.deposit_amount) || 0).toFixed(2).replace('.', ',')
+        : '',
+    ]
+  })
+  const csv = [header, ...rows].map((r) => r.join(';')).join('\n')
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `agenda-${String(mesFormatado || 'mes').replace(/\s/g, '-').toLowerCase()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function exportClientsCsv(clientes) {
   const header = ['Nome', 'WhatsApp', 'Tipo', 'Mensalidade', 'Vence dia', 'Visitas fidelidade']
   const rows = (clientes || []).map(c => [

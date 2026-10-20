@@ -39,6 +39,9 @@ export default function Configuracoes() {
   const [logoUrl, setLogoUrl] = useState('')
   const [autoConfirm, setAutoConfirm] = useState(false)
   const [reviewFirst, setReviewFirst] = useState(true)
+  const [depositMode, setDepositMode] = useState('off')
+  const [depositValue, setDepositValue] = useState('')
+  const [pixKey, setPixKey] = useState('')
   const [horarios, setHorarios] = useState([])
   const [bloqueios, setBloqueios] = useState([])
   const [bloqueioData, setBloqueioData] = useState('')
@@ -99,6 +102,9 @@ export default function Configuracoes() {
         setLogoUrl(perfil.logo_url || '')
         setAutoConfirm(perfil.auto_confirm_public === true)
         setReviewFirst(perfil.review_first_visit !== false)
+        setDepositMode(perfil.deposit_mode || 'off')
+        setDepositValue(perfil.deposit_value != null ? String(perfil.deposit_value) : '')
+        setPixKey(perfil.pix_key || '')
     } else if (ws === user.id) {
         await supabase.from('profiles').insert({ id: user.id, booking_active: true })
         setAgendamentoAtivo(true)
@@ -197,6 +203,9 @@ export default function Configuracoes() {
         logo_url: logoUrl || null,
         auto_confirm_public: autoConfirm,
         review_first_visit: reviewFirst,
+        deposit_mode: depositMode,
+        deposit_value: Number(String(depositValue).replace(',', '.')) || 0,
+        pix_key: pixKey.trim() || null,
     })
       : { error: null }
     const dadosHorarios = horarios.map(({ day_of_week, open_time, close_time, break_start, break_end, is_closed }) => ({
@@ -211,7 +220,13 @@ export default function Configuracoes() {
     const { error: errHorario } = await supabase.from('business_hours').upsert(dadosHorarios, { onConflict: 'user_id, day_of_week' })
     if (errPerfil || errHorario) {
       const m = errPerfil?.message || errHorario?.message || ''
-      toast.error(/cover_url|logo_url|auto_confirm|review_first/i.test(m) ? 'Rode o SQL 028 no Supabase (perfil e confirmação).' : 'Erro ao salvar')
+      toast.error(
+        /deposit_|pix_key/i.test(m)
+          ? 'Rode o SQL 039 no Supabase (sinal PIX).'
+          : /cover_url|logo_url|auto_confirm|review_first/i.test(m)
+            ? 'Rode o SQL 028 no Supabase (perfil e confirmação).'
+            : 'Erro ao salvar'
+      )
     }
     else toast.success('Dados atualizados!')
   }
@@ -361,6 +376,28 @@ export default function Configuracoes() {
                 Revisar só a primeira visita dessa cliente
               </label>
             )}
+            <h4 style={{ margin: '18px 0 8px', fontSize: '14px' }}>Sinal PIX no agendamento</h4>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px' }}>A cliente vê o valor no site. Você marca “sinal recebido” na agenda. O restante entra ao concluir.</p>
+            <select value={depositMode} onChange={e => setDepositMode(e.target.value)} style={inputStyle}>
+              <option value="off">Sem sinal</option>
+              <option value="fixed">Valor fixo (R$)</option>
+              <option value="percent">Percentual do serviço (%)</option>
+            </select>
+            {depositMode !== 'off' && (
+              <input
+                value={depositValue}
+                onChange={e => setDepositValue(e.target.value)}
+                inputMode="decimal"
+                placeholder={depositMode === 'percent' ? 'Ex: 30' : 'Ex: 40'}
+                style={{ ...inputStyle, marginTop: '10px' }}
+              />
+            )}
+            <input
+              value={pixKey}
+              onChange={e => setPixKey(e.target.value)}
+              placeholder="Chave PIX (CPF, e-mail ou celular)"
+              style={{ ...inputStyle, marginTop: '10px' }}
+            />
         </div>
 
         {userId && (

@@ -21,6 +21,8 @@ import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId, isStaffProfile } from '../utils/workspace'
 import { toDateInputValue } from '../utils/dates'
 import WhatsAppStatus from '../components/WhatsAppStatus'
+import HomeDayStrip from '../components/HomeDayStrip'
+import { computeDeposit, remainingDue } from '../utils/deposit'
 import {
   avisarEspera,
   confirmarPedido,
@@ -30,6 +32,7 @@ import {
   marcarAusencia,
   marcarRetorno,
   marcarRetornoEnviado,
+  marcarSinalPago,
   reabrirAtendimento,
   recusarPedido,
   reenviarManual,
@@ -63,6 +66,7 @@ export default function Agenda() {
   const [motivoTexto, setMotivoTexto] = useState('')
   const [espera, setEspera] = useState([])
   const [retornos, setRetornos] = useState([])
+  const [sinalCfg, setSinalCfg] = useState({ mode: 'off', value: 0 })
 
   const [alertModal, setAlertModal] = useState({ isOpen: false, type: 'info', title: '', message: '' })
   const [acaoConfirmacao, setAcaoConfirmacao] = useState(null)
@@ -79,8 +83,13 @@ export default function Agenda() {
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
-      setUserId(workspaceId(profile, user.id))
-      const { data } = await supabase.from('staff_members').select('id, name').eq('active', true).order('name')
+      const ws = workspaceId(profile, user.id)
+      setUserId(ws)
+      const [{ data }, { data: perfilSinal }] = await Promise.all([
+        supabase.from('staff_members').select('id, name').eq('active', true).order('name'),
+        supabase.from('profiles').select('deposit_mode, deposit_value').eq('id', ws).maybeSingle(),
+      ])
+      if (perfilSinal?.deposit_mode) setSinalCfg({ mode: perfilSinal.deposit_mode, value: perfilSinal.deposit_value || 0 })
       setStaffList(data || [])
       if (profile?.staff_member_id) setStaffFiltro(profile.staff_member_id)
     })
@@ -311,6 +320,16 @@ export default function Agenda() {
         <div style={overlayStyle}>
           <div style={modalBoxStyle}>
             <h3 style={{ textAlign: 'center', marginTop: 0 }}>Pagamento</h3>
+            {(() => {
+              const apt = agendamentos.find(a => a.id === idParaConcluir)
+              const resto = apt ? remainingDue(apt) : null
+              if (resto == null) return null
+              return (
+                <p style={{ textAlign: 'center', color: '#475569', fontSize: '14px', margin: '0 0 8px' }}>
+                  {resto === 0 ? 'Sinal cobre o valor. Só confirme o recebimento.' : `Restante: R$ ${resto.toFixed(2)}`}
+                </p>
+              )
+            })()}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '20px' }}>
               <button onClick={() => confirmarPagamento('PIX')} style={btnPagamento}>💠 PIX</button>
               <button onClick={() => confirmarPagamento('DINHEIRO')} style={btnPagamento}>💵 Dinheiro</button>
@@ -469,6 +488,8 @@ export default function Agenda() {
         )}
       </div>
 
+      <HomeDayStrip agendamentos={agendaDoDia} />
+
       {/* LEMBRETES PENDENTES */}
       {lembretesPendentes.length > 0 && (
         <div className="page-inner" style={{ padding: '12px 15px' }}>
@@ -567,6 +588,7 @@ export default function Agenda() {
                   onOpenOptions={() => abrirOpcoes(item)}
                   onTutorial={() => iniciarTutorialCard(item)}
                   onRefresh={() => { buscarAgendamentos(); carregarSemana() }}
+                  expectedDeposit={computeDeposit(item.agreed_price, sinalCfg.mode, sinalCfg.value)}
                 />
               ))}
             </div>
@@ -591,7 +613,9 @@ export default function Agenda() {
   )
 }
 
-function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onRefresh }) {
+function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onRefresh, expectedDeposit = 0 }) {
+  const sinalValor = Number(agendamento.deposit_amount) > 0 ? Number(agendamento.deposit_amount) : Number(expectedDeposit) || 0
+  const sinalAberto = sinalValor > 0 && agendamento.deposit_status !== 'paid' && agendamento.deposit_status !== 'applied'
   const hora = new Date(agendamento.start_time).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   const isMensalista = agendamento.clients?.type === 'MENSALISTA'
   const isConcluido = agendamento.status === 'CONCLUIDO'
@@ -601,7 +625,7 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
 
   const aprovarAgendamento = async (e) => {
     e.stopPropagation()
-    const result = await confirmarPedido(supabase, agendamento)
+    const result = await confirmarPedido(supabase, agendamento, sinalValor)
     if (!result.ok) return toast.error(result.error)
     toast.success('Confirmado!', { icon: '✅' })
     onRefresh?.()
@@ -643,8 +667,23 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
             <MessageCircle size={18} color="white" fill="white" />
           </button>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={aprovarAgendamento} style={{ flex: 1, background: '#16a34a', color: 'white', border: 'none', padding: '8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {sinalAberto && (
+            <button
+              type="button"
+              onClick={async (e) => {
+                e.stopPropagation()
+                const result = await marcarSinalPago(supabase, agendamento, sinalValor)
+                if (!result.ok) return toast.error(result.error)
+                toast.success('Sinal PIX marcado')
+                onRefresh?.()
+              }}
+              style={{ flex: '1 1 100%', background: '#0f172a', color: 'white', border: 'none', minHeight: '44px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+            >
+              Sinal PIX recebido (R$ {sinalValor.toFixed(2)})
+            </button>
+          )}
+          <button onClick={aprovarAgendamento} style={{ flex: 1, background: '#16a34a', color: 'white', border: 'none', padding: '8px', minHeight: '44px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
             <CheckCircle size={16} /> Aceitar
           </button>
           <button onClick={recusarAgendamento} style={{ flex: 1, background: 'white', color: '#dc2626', border: '1px solid #dc2626', padding: '8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
@@ -689,6 +728,11 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
             <span style={{ background: isMensalista ? '#f3e8ff' : '#dcfce7', color: isMensalista ? '#581c87' : '#14532d', padding: '2px 8px', borderRadius: '10px', fontWeight: 'bold', fontSize: '11px' }}>
               {isMensalista ? 'MENSAL' : (valorServico(agendamento) || `R$ ${agendamento.agreed_price}`)}
             </span>
+            {sinalValor > 0 && !isConcluido && (
+              <span style={{ fontSize: '10px', color: '#0f766e', border: '1px solid #99f6e4', background: '#f0fdfa', padding: '2px 6px', borderRadius: '4px' }}>
+                Sinal {agendamento.deposit_status === 'paid' || agendamento.deposit_status === 'applied' ? 'PIX ok' : `R$ ${sinalValor.toFixed(2)}`}
+              </span>
+            )}
             {isConcluido && agendamento.payment_method && (
               <span style={{ fontSize: '10px', color: '#666', border: '1px solid #e5e7eb', padding: '2px 6px', borderRadius: '4px' }}>{agendamento.payment_method}</span>
             )}
@@ -698,8 +742,24 @@ function CardAgendamento({ agendamento, onToggle, onOpenOptions, onTutorial, onR
 
       {/* BOTÕES LATERAIS */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginLeft: '5px' }}>
-        <button id={`zap-${agendamento.id}`} onClick={abrirWhatsapp} style={{ background: '#25D366', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><MessageCircle size={16} color="white" fill="white" /></button>
-        <button onClick={(e) => { e.stopPropagation(); onTutorial(); }} style={{ background: '#fef3c7', border: '1px solid #d97706', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        {sinalAberto && !isConcluido && !isFaltou && !isCancelado && (
+          <button
+            type="button"
+            title="Sinal PIX recebido"
+            onClick={async (e) => {
+              e.stopPropagation()
+              const result = await marcarSinalPago(supabase, agendamento, sinalValor)
+              if (!result.ok) return toast.error(result.error)
+              toast.success('Sinal PIX marcado')
+              onRefresh?.()
+            }}
+            style={{ background: '#0f172a', border: 'none', borderRadius: '50%', width: '44px', height: '44px', color: 'white', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            PIX
+          </button>
+        )}
+        <button id={`zap-${agendamento.id}`} onClick={abrirWhatsapp} style={{ background: '#25D366', border: 'none', borderRadius: '50%', width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><MessageCircle size={16} color="white" fill="white" /></button>
+        <button onClick={(e) => { e.stopPropagation(); onTutorial(); }} style={{ background: '#fef3c7', border: '1px solid #d97706', borderRadius: '50%', width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <HelpCircle size={16} color="#d97706" />
         </button>
       </div>

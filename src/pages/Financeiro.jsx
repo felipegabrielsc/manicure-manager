@@ -5,9 +5,10 @@ import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import FinanceOverview from '../components/FinanceOverview'
 import { dailyCompare, sliceUntilDay, classifyNewVsReturning, topClientsByVisits, paymentMix, staffCommissions } from '../utils/financeInsights'
+import { buildSalonReport } from '../utils/salonReports'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
-import { exportToCsv, exportToPrint } from '../utils/exportReport'
+import { exportAppointmentsCsv, exportToCsv, exportToPrint } from '../utils/exportReport'
 import { formatCivilDate, money, monthRangeLocal, toDateInputValue } from '../utils/dates'
 import { cobrancasMensalidade, idsMensalidadePaga, mensalidadeJaLancada } from '../application/mensalidade'
 import toast from 'react-hot-toast'
@@ -62,6 +63,8 @@ export default function Financeiro() {
   const [staffList, setStaffList] = useState([])
   const [staffFiltro, setStaffFiltro] = useState('')
   const [aba, setAba] = useState('caixa')
+  const [relatorio, setRelatorio] = useState(null)
+  const [agendaMes, setAgendaMes] = useState([])
 
   const mesFormatado = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dataAtual)
 
@@ -91,12 +94,25 @@ export default function Financeiro() {
     const prevDate = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 1, 1)
     const prevRange = monthRangeLocal(prevDate)
 
-    const { data: agendamentos } = await supabase
+    const selectAgenda = 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, deposit_amount, deposit_status, staff_members (name, commission_percent), clients (name, type), services (name, duration_minutes)'
+    const selectAgendaSemSinal = 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, staff_members (name, commission_percent), clients (name, type), services (name, duration_minutes)'
+    let agendaMesQuery = await supabase
       .from('appointments')
-      .select('id, agreed_price, start_time, client_id, payment_method, staff_id, staff_members (name, commission_percent), clients (name, type), services (name)')
+      .select(selectAgenda)
       .gte('start_time', start.toISOString())
       .lte('start_time', end.toISOString())
-      .eq('status', 'CONCLUIDO')
+    if (agendaMesQuery.error?.message?.includes('deposit_')) {
+      agendaMesQuery = await supabase
+        .from('appointments')
+        .select(selectAgendaSemSinal)
+        .gte('start_time', start.toISOString())
+        .lte('start_time', end.toISOString())
+    }
+    const agendaParaRelatorio = agendaMesQuery.data || []
+    setAgendaMes(agendaParaRelatorio)
+    setRelatorio(buildSalonReport(agendaParaRelatorio))
+
+    const agendamentos = agendaParaRelatorio.filter(a => a.status === 'CONCLUIDO')
 
     const { data: prevAgendamentos } = await supabase
       .from('appointments')
@@ -348,6 +364,10 @@ export default function Financeiro() {
     toast.success('CSV exportado!')
   }
 
+  function exportarAgenda() {
+    exportAppointmentsCsv(agendaMes, mesFormatado)
+  }
+
   function exportarPdf() {
     exportToPrint(movimentacoesFiltradas, mesFormatado, { entradas: entradasVisiveis, saidas: saidasVisiveis, lucro: lucroVisivel })
   }
@@ -524,6 +544,7 @@ export default function Financeiro() {
           <button onClick={() => mudarMes(-1)} style={btnNavStyle}>&lt;</button>
           <button onClick={() => mudarMes(1)} style={btnNavStyle}>&gt;</button>
           <button onClick={exportarCsv} style={{ ...btnNavStyle, fontSize: '14px' }} title="Exportar CSV"><Download size={18} /></button>
+          <button onClick={exportarAgenda} style={{ ...btnNavStyle, fontSize: '12px' }} title="Exportar agenda do mês">Agenda</button>
           <button onClick={exportarPdf} style={{ ...btnNavStyle, fontSize: '14px' }} title="Imprimir/PDF"><Printer size={18} /></button>
         </div>
       </div>
@@ -542,6 +563,24 @@ export default function Financeiro() {
 
         {aba === 'graficos' ? (
           overview ? (
+            <>
+            {relatorio && (
+              <div className="ui-card" style={{ padding: '16px', marginBottom: '16px' }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: '16px' }}>Painel do salão</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                  <div><span style={{ fontSize: '11px', color: '#64748b' }}>Ocupação*</span><strong style={{ display: 'block' }}>{relatorio.ocupacao}%</strong></div>
+                  <div><span style={{ fontSize: '11px', color: '#64748b' }}>Faltas</span><strong style={{ display: 'block' }}>{relatorio.faltas}%</strong></div>
+                  <div><span style={{ fontSize: '11px', color: '#64748b' }}>Retorno</span><strong style={{ display: 'block' }}>{relatorio.retorno}%</strong></div>
+                </div>
+                <p style={{ fontSize: '11px', color: '#94a3b8', margin: '0 0 8px' }}>*Ocupação usa 22 dias × 8h como referência do mês.</p>
+                {relatorio.servicos.map(s => (
+                  <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '4px 0', borderTop: '1px solid #f1f5f9' }}>
+                    <span>{s.name} ({s.count})</span>
+                    <strong>R$ {s.amount.toFixed(2)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
             <FinanceOverview
               mesLabel={overview.mesLabel}
               mesAnteriorLabel={overview.mesAnteriorLabel}
@@ -552,6 +591,7 @@ export default function Financeiro() {
               clientes={overview.clientes}
               pagamentos={overview.pagamentos}
             />
+            </>
           ) : !loading ? (
             <p style={{ textAlign: 'center', color: '#94a3b8' }}>Sem dados neste mês.</p>
           ) : null
