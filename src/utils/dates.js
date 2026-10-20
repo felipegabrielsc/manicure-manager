@@ -1,5 +1,11 @@
 /** Data civil no fuso local — evita o salto de um dia do UTC. */
 
+export function toLocalDatetimeInput(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export function toDateInputValue(date = new Date()) {
   const d = date instanceof Date ? date : new Date(date)
   const y = d.getFullYear()

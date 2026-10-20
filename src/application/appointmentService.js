@@ -7,6 +7,7 @@ import {
 import { openWhatsApp } from '../utils/whatsapp'
 import { msgLembrete, msgRetornoLembrete } from '../utils/bookingMessages'
 import { toDateInputValue } from '../utils/dates'
+import { computeDeposit } from '../utils/deposit'
 import {
   enqueueWaitlistAvailable,
   marcarEnvioManual,
@@ -68,7 +69,14 @@ export async function criarAgendamento(supabase, {
     return { ok: false, error: rpcCheck.reason || 'Horário indisponível.' }
   }
 
-  const { data, error } = await supabase.from('appointments').insert({
+  const { data: perfilSinal } = await supabase
+    .from('profiles')
+    .select('deposit_mode, deposit_value')
+    .eq('id', workspaceId)
+    .maybeSingle()
+  const depositAmount = computeDeposit(agreedPrice, perfilSinal?.deposit_mode, perfilSinal?.deposit_value)
+
+  const payload = {
     client_id: clientId,
     service_id: serviceId,
     start_time: startTime.toISOString(),
@@ -79,7 +87,16 @@ export async function criarAgendamento(supabase, {
     location_id: locationId || null,
     coupon_id: couponId || null,
     discount_applied: discountApplied || 0,
+  }
+  let { data, error } = await supabase.from('appointments').insert({
+    ...payload,
+    ...(depositAmount > 0 ? { deposit_amount: depositAmount, deposit_status: 'pending' } : {}),
   }).select('id').maybeSingle()
+  if (error?.message?.includes('deposit_')) {
+    const retry = await supabase.from('appointments').insert(payload).select('id').maybeSingle()
+    data = retry.data
+    error = retry.error
+  }
 
   if (error) return { ok: false, error: error.message }
 
@@ -101,8 +118,34 @@ export async function criarAgendamento(supabase, {
   return { ok: true, id: data?.id }
 }
 
-export async function confirmarPedido(supabase, agendamento) {
-  const { error } = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
+export async function marcarSinalPago(supabase, agendamento, amount) {
+  const depositAmount = Number(agendamento.deposit_amount) > 0
+    ? Number(agendamento.deposit_amount)
+    : Number(amount) || 0
+  const { error } = await supabase.from('appointments').update({
+    deposit_status: 'paid',
+    ...(depositAmount > 0 ? { deposit_amount: depositAmount } : {}),
+  }).eq('id', agendamento.id)
+  if (error) {
+    return {
+      ok: false,
+      error: error.message?.includes('deposit_') ? 'Rode o SQL 039 no Supabase (sinal PIX).' : error.message,
+    }
+  }
+  return { ok: true }
+}
+
+export async function confirmarPedido(supabase, agendamento, depositHint) {
+  const patch = { status: 'AGENDADO' }
+  if ((Number(agendamento.deposit_amount) || 0) <= 0 && Number(depositHint) > 0) {
+    patch.deposit_amount = Number(depositHint)
+    patch.deposit_status = 'pending'
+  }
+  let { error } = await supabase.from('appointments').update(patch).eq('id', agendamento.id)
+  if (error?.message?.includes('deposit_')) {
+    const retry = await supabase.from('appointments').update({ status: 'AGENDADO' }).eq('id', agendamento.id)
+    error = retry.error
+  }
   if (error) return { ok: false, error: error.message }
   await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO' })
   return { ok: true }
@@ -139,10 +182,13 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
     }
   }
 
-  const { error } = await supabase.from('appointments').update({
+  const patch = {
     status: 'CONCLUIDO',
     payment_method: metodo,
-  }).eq('id', agendamento.id)
+  }
+  if (agendamento?.deposit_status === 'paid') patch.deposit_status = 'applied'
+
+  const { error } = await supabase.from('appointments').update(patch).eq('id', agendamento.id)
   if (error) return { ok: false, error: error.message }
 
   await incrementLoyaltyVisit(supabase, agendamento.client_id)

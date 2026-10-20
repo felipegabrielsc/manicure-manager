@@ -73,9 +73,10 @@ supabase/migrations/035_skip_past_reminders.sql
 supabase/migrations/036_public_booking_rate_limit.sql
 supabase/migrations/037_admin_grants_e_rls.sql
 supabase/migrations/038_notification_claim.sql
+supabase/migrations/039_sinal_pix_e_inativas.sql
 ```
 
-**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–036**, a **037** e a **038**. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin. A **038** recupera mensagens presas em `sending` e trava a fila para dois workers não enviarem o mesmo item. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–036**, a **037**, a **038** e a **039**. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin. A **038** recupera mensagens presas em `sending` e trava a fila para dois workers não enviarem o mesmo item. A **039** liga o sinal PIX, a chave PIX no site e a janela de inativas (30/45/60). Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 

@@ -12,6 +12,7 @@ import {
 } from '../utils/scheduling'
 import { toDateInputValue } from '../utils/dates'
 import { msgPedidoPublico } from '../utils/bookingMessages'
+import { computeDeposit, pixCopyText } from '../utils/deposit'
 
 export default function AgendamentoPublico() {
   const { userId } = useParams()
@@ -34,6 +35,7 @@ export default function AgendamentoPublico() {
   const [carregandoSlots, setCarregandoSlots] = useState(false)
   const [esperaEnviada, setEsperaEnviada] = useState(false)
   const [pedidoStatus, setPedidoStatus] = useState('PENDENTE')
+  const [perfilSinal, setPerfilSinal] = useState(null)
 
   useEffect(() => {
     async function init() {
@@ -49,6 +51,7 @@ export default function AgendamentoPublico() {
         setAgendaAberta(true)
         setManicurePhone(perfil?.whatsapp || '')
         setBusinessName(perfil?.business_name || 'Manicure')
+        setPerfilSinal(perfil)
         setServicos(agenda.services || [])
       } catch (err) {
         console.error(err)
@@ -186,6 +189,11 @@ export default function AgendamentoPublico() {
   }
 
   const minDate = toDateInputValue()
+  const sinalPublico = computeDeposit(
+    servicos.find(s => s.id == servicoId)?.default_price,
+    perfilSinal?.deposit_mode,
+    perfilSinal?.deposit_value
+  )
 
   if (agendaAberta === null) {
     return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}>Carregando agenda...</div>
@@ -239,6 +247,15 @@ export default function AgendamentoPublico() {
                 ))}
               </select>
             </div>
+            {sinalPublico > 0 && (
+              <div style={{ background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '10px', padding: '12px', fontSize: '13px', color: '#115e59' }}>
+                <strong>Sinal PIX: R$ {sinalPublico.toFixed(2)}</strong>
+                <p style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}>
+                  {pixCopyText({ pixKey: perfilSinal?.pix_key, amount: sinalPublico, businessName })}
+                </p>
+                <p style={{ margin: '8px 0 0' }}>Envie o comprovante no WhatsApp. A profissional confirma o sinal na agenda.</p>
+              </div>
+            )}
             <div>
               <label style={lbl}><Calendar size={16} /> Data</label>
               <input required type="date" min={minDate} value={data} onChange={e => setData(e.target.value)} style={inp} />

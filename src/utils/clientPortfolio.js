@@ -2,6 +2,7 @@ import { idempotencyKey } from '../application/notificationPlan.js'
 import { summarizeClient } from './clientInsights.js'
 
 export const DEFAULT_RETURN_DAYS = 30
+export const INACTIVE_WINDOWS = [30, 45, 60]
 export const DEFAULT_VIP_MIN = 300
 export const NEW_CLIENT_DAYS = 30
 export const FREQUENT_MIN_VISITS = 3
@@ -147,7 +148,7 @@ export function carteiraDaCliente({ cliente, atendimentos = [], compras = [], no
   }
 }
 
-export function segmentosDaCliente(carteira, { cliente, now = new Date(), vipMin = DEFAULT_VIP_MIN, isTop = false } = {}) {
+export function segmentosDaCliente(carteira, { cliente, now = new Date(), vipMin = DEFAULT_VIP_MIN, isTop = false, inactiveDays } = {}) {
   const ids = []
   const diasCadastro = daysSinceDate(cliente?.created_at, now)
   if (diasCadastro != null && diasCadastro >= 0 && diasCadastro <= NEW_CLIENT_DAYS) ids.push('novas')
@@ -156,7 +157,17 @@ export function segmentosDaCliente(carteira, { cliente, now = new Date(), vipMin
     && carteira.daysSince != null
     && carteira.daysSince <= carteira.returnWindow
   ) ids.push('frequentes')
-  if (carteira.atendimentos > 0 && carteira.daysSince != null && carteira.daysSince > carteira.returnWindow) {
+  const janelaInativa = Number(inactiveDays)
+  const inativaPorJanela = Number.isFinite(janelaInativa)
+    && carteira.atendimentos > 0
+    && carteira.daysSince != null
+    && carteira.daysSince >= janelaInativa
+    && !carteira.hasFuture
+  const inativaPorRetorno = !Number.isFinite(janelaInativa)
+    && carteira.atendimentos > 0
+    && carteira.daysSince != null
+    && carteira.daysSince > carteira.returnWindow
+  if (inativaPorJanela || inativaPorRetorno) {
     ids.push('inativas')
   }
   const minimo = Number(vipMin)

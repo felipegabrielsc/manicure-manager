@@ -17,6 +17,7 @@ import {
   avisoDoSegmento,
   carteiraDaCliente,
   DEFAULT_VIP_MIN,
+  INACTIVE_WINDOWS,
   SEGMENTOS,
   segmentosDaCliente,
   textoFrequencia,
@@ -48,6 +49,7 @@ export default function Clientes() {
   const [segmento, setSegmento] = useState('')
   const [vipMin, setVipMin] = useState(String(DEFAULT_VIP_MIN))
   const [vipOk, setVipOk] = useState(true)
+  const [inactiveDays, setInactiveDays] = useState(30)
   const [avisando, setAvisando] = useState(false)
 
   // Estados para Modal de Histórico
@@ -109,7 +111,10 @@ export default function Clientes() {
     const { data: clientsData, error: errClients } = await supabase.from('clients').select('*').order('name')
     if (errClients) { toast.error('Erro ao carregar clientes'); setLoading(false); return; }
 
-    let loyaltyQuery = await supabase.from('loyalty_settings').select('visits_required, reward_description, active, vip_min_amount').maybeSingle()
+    let loyaltyQuery = await supabase.from('loyalty_settings').select('visits_required, reward_description, active, vip_min_amount, inactive_days').maybeSingle()
+    if (loyaltyQuery.error?.message?.includes('inactive_days')) {
+      loyaltyQuery = await supabase.from('loyalty_settings').select('visits_required, reward_description, active, vip_min_amount').maybeSingle()
+    }
     if (loyaltyQuery.error?.message?.includes('vip_min_amount')) {
       setVipOk(false)
       loyaltyQuery = await supabase.from('loyalty_settings').select('visits_required, reward_description, active').maybeSingle()
@@ -117,6 +122,7 @@ export default function Clientes() {
       setVipOk(true)
       if (loyaltyQuery.data?.vip_min_amount != null) setVipMin(String(loyaltyQuery.data.vip_min_amount))
     }
+    if (loyaltyQuery.data?.inactive_days) setInactiveDays(Number(loyaltyQuery.data.inactive_days) || 30)
     setLoyaltySettings(loyaltyQuery.data)
 
     const aniversarioProbe = await supabase.from('clients').select('birthday').limit(1)
@@ -303,6 +309,7 @@ export default function Clientes() {
       now: agora,
       vipMin: Number.isFinite(minimoVip) ? minimoVip : DEFAULT_VIP_MIN,
       isTop: maxGasto > 0 && c.carteira.faturado === maxGasto,
+      inactiveDays,
     }) : [],
   }))
   const contagemSegmento = Object.fromEntries(SEGMENTOS.map(s => [s.id, comSegmentos.filter(c => c.segmentos.includes(s.id)).length]))
@@ -319,6 +326,19 @@ export default function Clientes() {
     }, { onConflict: 'user_id' })
     if (error) toast.error(error.message?.includes('vip_min_amount') ? 'Rode o SQL 033 no Supabase (mínimo VIP).' : (error.message || 'Erro ao salvar'))
     else toast.success('Mínimo VIP salvo')
+  }
+
+  async function salvarJanelaInativa(dias) {
+    setInactiveDays(dias)
+    const user = (await supabase.auth.getUser()).data.user
+    if (!user) return
+    const { error } = await supabase.from('loyalty_settings').upsert({
+      user_id: workspaceId(profile, user.id),
+      inactive_days: dias,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+    if (error?.message?.includes('inactive_days')) toast.error('Rode o SQL 039 no Supabase (inativas).')
+    else if (error) toast.error(error.message || 'Não salvou a janela')
   }
 
   async function avisarSegmento() {
@@ -454,6 +474,14 @@ export default function Clientes() {
               {SEGMENTOS.map(seg => (
                 <button key={seg.id} type="button" onClick={() => setSegmento(segmento === seg.id ? '' : seg.id)} style={chipFiltro(segmento === seg.id)}>
                   {seg.label} ({contagemSegmento[seg.id] || 0})
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', flexShrink: 0 }}>Inativa há</span>
+              {INACTIVE_WINDOWS.map(dias => (
+                <button key={dias} type="button" onClick={() => salvarJanelaInativa(dias)} style={chipFiltro(inactiveDays === dias)}>
+                  {dias} dias
                 </button>
               ))}
             </div>

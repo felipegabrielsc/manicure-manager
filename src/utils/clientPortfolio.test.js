@@ -56,6 +56,11 @@ describe('carteira da cliente', () => {
     expect(ids).toEqual(['novas', 'inativas', 'vip', 'sem_retorno', 'aniversariantes', 'cancelaram', 'faltaram'])
   })
 
+  it('filtra inativas pela janela 30/45/60 sem misturar com a manutenção', () => {
+    expect(segmentosDaCliente(carteira, { cliente, now, vipMin: 999, inactiveDays: 30 })).toContain('inativas')
+    expect(segmentosDaCliente(carteira, { cliente, now, vipMin: 999, inactiveDays: 45 })).not.toContain('inativas')
+  })
+
   it('não trata como inativa quem voltou dentro da janela e já tem horário', () => {
     const recente = carteiraDaCliente({
       cliente: { ...cliente, created_at: '2026-10-01T15:00:00.000Z', birthday: null },

@@ -1,35 +1,39 @@
 // src/App.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { Toaster } from 'react-hot-toast'
 
-// Páginas
 import Agenda from './pages/Agenda'
 import NovoAgendamento from './pages/NovoAgendamento'
-import Clientes from './pages/Clientes'
-import Servicos from './pages/Servicos'
-import Financeiro from './pages/Financeiro'
 import Login from './pages/Login'
 import Landing from './pages/Landing'
 import ResumoAgendamento from './pages/ResumoAgendamento'
-import Configuracoes from './pages/Configuracoes'
 import AgendamentoPublico from './pages/AgendamentoPublico'
-import Bloqueado from './pages/Bloqueado' 
-import Admin from './pages/Admin'
+import Bloqueado from './pages/Bloqueado'
 import Cadastro from './pages/Cadastro'
 import EsqueciSenha from './pages/EsqueciSenha'
 import RedefinirSenha from './pages/RedefinirSenha'
 import PerfilPublico from './pages/PerfilPublico'
-import Estoque from './pages/Estoque'
-import Fidelidade from './pages/Fidelidade'
-import Equipe from './pages/Equipe'
-import Planos from './pages/Planos'
 import Onboarding from './pages/Onboarding'
 import AppLayout from './components/AppLayout'
 import { SessionProfileContext } from './context/SessionProfile'
 import { checkPendingNotifications } from './utils/notifications'
 import { assembleSessionProfile } from './utils/sessionProfile'
+
+const Clientes = lazy(() => import('./pages/Clientes'))
+const Servicos = lazy(() => import('./pages/Servicos'))
+const Financeiro = lazy(() => import('./pages/Financeiro'))
+const Configuracoes = lazy(() => import('./pages/Configuracoes'))
+const Admin = lazy(() => import('./pages/Admin'))
+const Estoque = lazy(() => import('./pages/Estoque'))
+const Fidelidade = lazy(() => import('./pages/Fidelidade'))
+const Equipe = lazy(() => import('./pages/Equipe'))
+const Planos = lazy(() => import('./pages/Planos'))
+
+function PageFallback() {
+  return <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Carregando...</div>
+}
 
 const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, salon_owner_id, onboarding_done, last_seen_at, business_name, subscription_plans(name, price, features)'
 const PROFILE_SELECT_FALLBACK = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
@@ -143,15 +147,15 @@ export default function App() {
               <Route element={<AppLayout />}>
               <Route path="/" element={<Agenda />} />
               <Route path="/novo" element={<NovoAgendamento />} />
-              <Route path="/clientes" element={<Clientes />} />
-              <Route path="/servicos" element={<Servicos />} />
-              <Route path="/financeiro" element={<Financeiro />} />
-              <Route path="/configuracoes" element={<Configuracoes />} />
-              <Route path="/estoque" element={<Estoque />} />
-              <Route path="/fidelidade" element={<Fidelidade />} />
-              <Route path="/equipe" element={<Equipe />} />
-              <Route path="/planos" element={<Planos />} />
-              <Route path="/admin" element={<Admin />} />
+              <Route path="/clientes" element={<Suspense fallback={<PageFallback />}><Clientes /></Suspense>} />
+              <Route path="/servicos" element={<Suspense fallback={<PageFallback />}><Servicos /></Suspense>} />
+              <Route path="/financeiro" element={<Suspense fallback={<PageFallback />}><Financeiro /></Suspense>} />
+              <Route path="/configuracoes" element={<Suspense fallback={<PageFallback />}><Configuracoes /></Suspense>} />
+              <Route path="/estoque" element={<Suspense fallback={<PageFallback />}><Estoque /></Suspense>} />
+              <Route path="/fidelidade" element={<Suspense fallback={<PageFallback />}><Fidelidade /></Suspense>} />
+              <Route path="/equipe" element={<Suspense fallback={<PageFallback />}><Equipe /></Suspense>} />
+              <Route path="/planos" element={<Suspense fallback={<PageFallback />}><Planos /></Suspense>} />
+              <Route path="/admin" element={<Suspense fallback={<PageFallback />}><Admin /></Suspense>} />
               <Route path="*" element={<Navigate to="/" />} />
               </Route>
             </>
