@@ -6,7 +6,7 @@ async function cancelStale(supabase, appointmentId, keepKeys) {
     .from('notifications')
     .select('id, idempotency_key')
     .eq('appointment_id', appointmentId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'sending'])
   if (error || !data?.length) return { ok: !error, error: error?.message }
 
   const stale = data.filter((row) => !keepKeys.includes(row.idempotency_key)).map((row) => row.id)
@@ -38,7 +38,7 @@ export async function cancelPending(supabase, { appointmentId, types } = {}) {
     .from('notifications')
     .update({ status: 'cancelled', updated_at: new Date().toISOString() })
     .eq('appointment_id', appointmentId)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'sending'])
   if (types?.length) query = query.in('type', types)
   const { error } = await query
   return { ok: !error, error: error?.message }

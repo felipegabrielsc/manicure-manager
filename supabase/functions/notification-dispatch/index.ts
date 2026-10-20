@@ -3,9 +3,8 @@ import webpush from 'npm:web-push@3.6.7'
 import { json } from '../_shared/cors.ts'
 import { morningSaoPauloIso } from '../_shared/whatsapp/format.ts'
 import { createWhatsAppProvider } from '../_shared/whatsapp/provider.ts'
-import { allowSend, dispatchLogEntry, WHATSAPP_BURST_LIMIT } from '../../../src/application/dispatchPolicy.js'
-
-const RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000]
+import { allowSend, classifySendResult, dispatchLogEntry, STUCK_SENDING_MS, WHATSAPP_BURST_LIMIT } from '../../../src/application/dispatchPolicy.js'
+import { retryAfterFailure } from '../../../src/application/notificationPlan.js'
 
 function authorized(req: Request) {
   const secret = Deno.env.get('CRON_SECRET') || ''
@@ -17,10 +16,29 @@ function authorized(req: Request) {
   return false
 }
 
-function retryAfterFailure(attemptsAfterThisTry, now: Date) {
-  if (attemptsAfterThisTry >= 4) return { status: 'failed', nextAttemptAt: null }
-  const delay = RETRY_DELAYS_MS[attemptsAfterThisTry - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]
-  return { status: 'pending', nextAttemptAt: new Date(now.getTime() + delay).toISOString() }
+async function loadDue(admin: ReturnType<typeof createClient>, nowIso: string) {
+  const stuckBefore = new Date(Date.now() - STUCK_SENDING_MS).toISOString()
+  await admin.from('notifications').update({
+    status: 'pending',
+    error_message: 'recovered_stuck_sending',
+    updated_at: nowIso,
+  }).eq('status', 'sending').lt('updated_at', stuckBefore)
+
+  const rpc = await admin.rpc('claim_due_notifications', { p_limit: 40 })
+  if (!rpc.error && Array.isArray(rpc.data)) {
+    return { rows: rpc.data, alreadyClaimed: true, error: null }
+  }
+
+  const { data, error } = await admin
+    .from('notifications')
+    .select('*')
+    .eq('status', 'pending')
+    .lte('scheduled_for', nowIso)
+    .lte('next_attempt_at', nowIso)
+    .order('next_attempt_at')
+    .limit(40)
+
+  return { rows: data || [], alreadyClaimed: false, error }
 }
 
 async function sendPush(admin: ReturnType<typeof createClient>, userId: string, payload: { title?: string; body?: string; url?: string }) {
@@ -157,16 +175,9 @@ Deno.serve(async (req) => {
   const nowIso = now.toISOString()
   await enqueuePaymentReminders(admin, now)
   const whatsapp = createWhatsAppProvider()
-  const { data: due, error } = await admin
-    .from('notifications')
-    .select('*')
-    .eq('status', 'pending')
-    .lte('scheduled_for', nowIso)
-    .lte('next_attempt_at', nowIso)
-    .order('next_attempt_at')
-    .limit(40)
-
-  if (error) return json({ ok: false, reason: error.message }, 500)
+  const loaded = await loadDue(admin, nowIso)
+  if (loaded.error) return json({ ok: false, reason: loaded.error.message }, 500)
+  const due = loaded.rows
 
   let sent = 0
   let held = 0
@@ -174,13 +185,18 @@ Deno.serve(async (req) => {
   const sentByWorkspace: Record<string, number> = {}
 
   for (const row of due || []) {
-    const { data: claimed } = await admin
-      .from('notifications')
-      .update({ status: 'sending', updated_at: nowIso })
-      .eq('id', row.id)
-      .eq('status', 'pending')
-      .select('id')
-    if (!claimed?.length) continue
+    if (!loaded.alreadyClaimed) {
+      const { data: claimed } = await admin
+        .from('notifications')
+        .update({ status: 'sending', updated_at: nowIso })
+        .eq('id', row.id)
+        .eq('status', 'pending')
+        .select('id')
+      if (!claimed?.length) continue
+    }
+
+    const { data: fresh } = await admin.from('notifications').select('status').eq('id', row.id).maybeSingle()
+    if (fresh?.status === 'cancelled') continue
 
     const payload = row.payload || {}
 
@@ -241,7 +257,9 @@ Deno.serve(async (req) => {
         sessionId: connection.provider_session_id,
         phone: phone || '',
         text,
+        idempotencyKey: row.idempotency_key || row.id,
       })
+      const classified = classifySendResult(result)
       const logged = (status: string, attempt = row.attempts || 0) => logDispatch(admin, dispatchLogEntry({
         workspaceId: row.user_id,
         notificationId: row.id,
@@ -251,7 +269,7 @@ Deno.serve(async (req) => {
         attempt,
         phone,
       }))
-      if (result.ok) {
+      if (classified.outcome === 'sent') {
         const sentAt = new Date().toISOString()
         await admin.from('notifications').update({
           status: 'sent',
@@ -265,20 +283,14 @@ Deno.serve(async (req) => {
         sent += 1
         continue
       }
-      if (result.error === 'no_phone') {
+      if (classified.outcome === 'failed') {
         await admin.from('notifications').update({
           status: 'failed',
-          error_message: 'no_phone',
+          error_message: classified.reason || result.error || 'failed',
           updated_at: new Date().toISOString(),
         }).eq('id', row.id)
         await logged('failed')
         failed += 1
-        continue
-      }
-      if (!result.retry) {
-        await holdWhatsapp(admin, row.id, result.error || 'no_connection')
-        await logged('pending', row.attempts || 0)
-        held += 1
         continue
       }
       const decision = retryAfterFailure((row.attempts || 0) + 1, new Date())

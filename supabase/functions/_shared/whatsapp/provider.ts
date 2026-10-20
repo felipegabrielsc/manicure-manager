@@ -110,13 +110,17 @@ export function createWhatsAppProvider() {
       }
       return { ok: true, status, phone, displayName, qrImage }
     },
-    async sendText({ sessionId, phone, text }: { sessionId: string; phone: string; text: string }) {
+    async sendText({ sessionId, phone, text, idempotencyKey }: { sessionId: string; phone: string; text: string; idempotencyKey?: string }) {
       const jid = phoneToJid(phone)
       if (!jid) return { ok: false, error: 'no_phone', retry: false, providerMessageId: null }
       if (!configured) return { ok: false, error: 'not_configured', retry: false, providerMessageId: null }
       const result = await request(
         `/api/messages/${encodeURIComponent(sessionId)}/${encodeURIComponent(jid)}/send`,
-        { method: 'POST', body: JSON.stringify({ message: { text } }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({ message: { text } }),
+          headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+        },
       )
       if (result.error === 'not_configured') return { ok: false, error: 'not_configured', retry: false, providerMessageId: null }
       if (result.error === 'gateway_down') return { ok: false, error: 'gateway_down', retry: true, providerMessageId: null }
@@ -124,12 +128,15 @@ export function createWhatsAppProvider() {
       const key = asRecord(data?.key)
       const providerMessageId = typeof key?.id === 'string' ? key.id : null
       const rejected = result.body?.status === false
+      if (result.status === 409) {
+        return { ok: true, providerMessageId: providerMessageId || 'duplicate', error: null, retry: false, status: 409 }
+      }
       if (!result.ok || rejected) {
         const retry = result.status === 0 || result.status === 404 || result.status >= 500
         const error = result.status === 401 ? 'gateway_unauthorized' : 'gateway_error'
-        return { ok: false, error, retry: result.status === 401 ? false : retry, providerMessageId: null }
+        return { ok: false, error, retry: result.status === 401 ? false : retry, providerMessageId: null, status: result.status }
       }
-      return { ok: true, providerMessageId, error: null, retry: false }
+      return { ok: true, providerMessageId, error: null, retry: false, status: result.status }
     },
     sendImage: async () => notImplemented(),
     sendDocument: async () => notImplemented(),

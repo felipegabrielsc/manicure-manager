@@ -87,6 +87,22 @@ export function paymentMix(receitas) {
   return list.map(x => ({ ...x, pct: soma ? Math.round((x.total / soma) * 100) : 0 }))
 }
 
+export function staffCommissions(appointments) {
+  const porStaff = {}
+  for (const a of appointments || []) {
+    if (!a.staff_id || a.payment_method === 'MENSALIDADE' || a.payment_method === 'PACOTE') continue
+    const pct = Number(a.staff_members?.commission_percent) || 0
+    if (pct <= 0) continue
+    if (!porStaff[a.staff_id]) {
+      porStaff[a.staff_id] = { name: a.staff_members?.name || 'Profissional', bruto: 0, comissao: 0, pct }
+    }
+    const valor = Number(a.agreed_price) || 0
+    porStaff[a.staff_id].bruto += valor
+    porStaff[a.staff_id].comissao += valor * (pct / 100)
+  }
+  return Object.values(porStaff)
+}
+
 export function labelPagamentoCurto(metodo) {
   if (metodo === 'PIX') return 'PIX'
   if (metodo === 'DINHEIRO') return 'Dinheiro'
