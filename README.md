@@ -72,9 +72,10 @@ supabase/migrations/034_assistant_and_observability.sql
 supabase/migrations/035_skip_past_reminders.sql
 supabase/migrations/036_public_booking_rate_limit.sql
 supabase/migrations/037_admin_grants_e_rls.sql
+supabase/migrations/038_notification_claim.sql
 ```
 
-**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–036** e a **037**. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin, passa a usar convite de uso único e impede um salão de ler o outro. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–036**, a **037** e a **038**. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin. A **038** recupera mensagens presas em `sending` e trava a fila para dois workers não enviarem o mesmo item. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -86,6 +87,12 @@ Não commite `.env` nem `supabase/.temp/`.
 npm run dev
 ```
 
+O GitHub Actions (`.github/workflows/ci.yml`) roda `npm test` e `npm run build` em todo push e pull request (o lint ainda avisa, mas não bloqueia enquanto o código antigo não for limpo). Não reescreva migrations já aplicadas; correção nova vai em arquivo com o próximo número.
+
+**Homologação e backup:** publique o front na Vercel em preview; SQL só no SQL Editor de um projeto Supabase de teste. Backup: Dashboard → Database → Backups, ou `pg_dump` do connection string. Restaure só em projeto de teste. Não rode `supabase db reset` em produção.
+
+**Fila (038):** faça o deploy de `notification-dispatch` depois de colar a 038. O cron continua com `x-cron-secret`.
+
 ## Scripts
 
 | Comando | Descrição |
@@ -94,7 +101,7 @@ npm run dev
 | `npm run build` | Build de produção |
 | `npm run preview` | Preview do build |
 | `npm run lint` | ESLint |
-| `npm test` | Testes (horários, plano, datas) |
+| `npm test` | Testes (agenda, plano, pagamentos, notificações, permissões) |
 
 ## Rotas principais
 

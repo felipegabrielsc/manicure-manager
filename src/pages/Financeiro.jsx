@@ -4,7 +4,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, PlusCircle, Calendar, FileText, Tr
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import FinanceOverview from '../components/FinanceOverview'
-import { dailyCompare, sliceUntilDay, classifyNewVsReturning, topClientsByVisits, paymentMix } from '../utils/financeInsights'
+import { dailyCompare, sliceUntilDay, classifyNewVsReturning, topClientsByVisits, paymentMix, staffCommissions } from '../utils/financeInsights'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { exportToCsv, exportToPrint } from '../utils/exportReport'
@@ -171,19 +171,7 @@ export default function Financeiro() {
       paidClientIds: idsPagosNoMes,
     }))
 
-    const porStaff = {}
-    ;(agendamentos || []).forEach(a => {
-      if (!a.staff_id || a.payment_method === 'MENSALIDADE' || a.payment_method === 'PACOTE') return
-      const pct = Number(a.staff_members?.commission_percent) || 0
-      if (pct <= 0) return
-      if (!porStaff[a.staff_id]) {
-        porStaff[a.staff_id] = { name: a.staff_members?.name || 'Profissional', bruto: 0, comissao: 0, pct }
-      }
-      const valor = Number(a.agreed_price) || 0
-      porStaff[a.staff_id].bruto += valor
-      porStaff[a.staff_id].comissao += valor * (pct / 100)
-    })
-    setComissoes(Object.values(porStaff))
+    setComissoes(staffCommissions(agendamentos))
 
     const hojeIni = new Date()
     hojeIni.setHours(0, 0, 0, 0)

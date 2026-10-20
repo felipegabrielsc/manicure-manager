@@ -28,4 +28,22 @@ describe('appointmentService', () => {
     expect(result.valid).toBe(false)
     expect(result.reason).toBe('Horário indisponível ou já ocupado.')
   })
+
+  it('duas profissionais no mesmo horário não conflitam', () => {
+    const start = mondayAt(10)
+    const result = validarRemarcacao({
+      startTime: start,
+      durationMinutes: 60,
+      businessHours: [{ day_of_week: start.getDay(), open_time: '09:00', close_time: '18:00', is_closed: false }],
+      appointments: [{
+        id: '1',
+        start_time: start.toISOString(),
+        status: 'AGENDADO',
+        staff_id: 'staff-1',
+        services: { duration_minutes: 60 },
+      }],
+      staffId: 'staff-2',
+    })
+    expect(result.valid).toBe(true)
+  })
 })
