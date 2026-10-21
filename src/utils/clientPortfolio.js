@@ -96,7 +96,7 @@ function historicoDe(concluidos, compras) {
     payment_method: app.payment_method,
     category: 'servico',
   }))
-  const extras = (compras || []).map((t) => ({
+  const extras = (compras || []).filter((t) => !(t.charge_id && (t.category === 'servico' || t.category === 'estorno'))).map((t) => ({
     id: `tx-${t.id}`,
     tipo: 'compra',
     titulo: t.description || (t.category === 'mensalidade' ? 'Mensalidade' : 'Compra'),

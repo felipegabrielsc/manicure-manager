@@ -18,7 +18,7 @@ export default function FinanceOverview({
 }) {
   const [aberto, setAberto] = useState(false)
   const fatTrend = trendPct(kpis.faturamento, kpis.prevFaturamento)
-  const lucroTrend = trendPct(kpis.lucro, kpis.prevLucro)
+  const lucroTrend = trendPct(kpis.resultadoCaixa ?? kpis.lucro, kpis.prevResultadoCaixa ?? kpis.prevLucro)
   const aptTrend = trendPct(kpis.atendimentos, kpis.prevAtendimentos)
   const ticketTrend = trendPct(kpis.ticket, kpis.prevTicket)
   const fatAteTrend = trendPct(comparacao.faturamento, comparacao.faturamentoAnt)
@@ -43,7 +43,7 @@ export default function FinanceOverview({
               <YAxis tick={{ fontSize: 11 }} />
               <Tooltip formatter={(v) => `R$ ${money(v)}`} />
               <Legend />
-              <Line type="monotone" dataKey="atual" name="Este mês" stroke="#7c3aed" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="atual" name="Recebido" stroke="#7c3aed" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="anterior" name="Mês anterior" stroke="#94a3b8" strokeDasharray="4 4" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
@@ -98,8 +98,11 @@ export default function FinanceOverview({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
         <MiniKpi label="Faturamento" value={`R$ ${money(kpis.faturamento)}`} trend={fatTrend} />
-        <MiniKpi label="Despesas" value={`R$ ${money(kpis.despesas)}`} />
-        <MiniKpi label="Lucro" value={`R$ ${money(kpis.lucro)}`} trend={lucroTrend} />
+        {kpis.recebimentos != null && <MiniKpi label="Recebimentos" value={`R$ ${money(kpis.recebimentos)}`} />}
+        {kpis.contasAReceber != null && <MiniKpi label="A receber" value={`R$ ${money(kpis.contasAReceber)}`} />}
+        <MiniKpi label={kpis.despesasPagas != null ? 'Despesas pagas' : 'Despesas'} value={`R$ ${money(kpis.despesasPagas ?? kpis.despesas)}`} />
+        <MiniKpi label="Resultado de caixa" value={`R$ ${money(kpis.resultadoCaixa ?? kpis.lucro)}`} trend={lucroTrend} />
+        {kpis.resultadoOperacional != null && <MiniKpi label="Resultado operacional" value={`R$ ${money(kpis.resultadoOperacional)}`} wide />}
         <MiniKpi label="Atendimentos" value={String(kpis.atendimentos)} trend={aptTrend} />
         <MiniKpi label="Ticket médio" value={`R$ ${money(kpis.ticket)}`} trend={ticketTrend} wide />
       </div>

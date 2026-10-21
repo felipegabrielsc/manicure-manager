@@ -56,7 +56,7 @@ export function resumoDoDia({ appointments, now = new Date() }) {
   const lista = appointments || []
   const ativos = lista.filter((a) => a.status !== 'CANCELADO' && a.status !== 'FALTOU')
   const caixa = ativos
-    .filter((a) => a.status === 'CONCLUIDO')
+    .filter((a) => a.status === 'CONCLUIDO' && ['PIX', 'DINHEIRO', 'CARTAO', 'OUTRO'].includes(a.payment_method))
     .reduce((sum, a) => sum + (Number(a.agreed_price) || 0), 0)
   const proximos = ativos
     .filter((a) => a.status !== 'CONCLUIDO' && new Date(a.start_time).getTime() >= now.getTime())

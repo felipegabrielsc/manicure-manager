@@ -14,6 +14,26 @@ import {
   syncAppointmentNotifications,
 } from './notificationService.js'
 
+function rpcAusente(error) {
+  const message = error?.message || ''
+  return /schema cache|could not find the function|PGRST202|404/i.test(message)
+}
+
+async function sincronizarConclusao(supabase, appointmentId) {
+  const { error } = await supabase.rpc('sincronizar_conclusao_atendimento', {
+    p_appointment_id: appointmentId,
+  })
+  if (error && !rpcAusente(error)) return
+}
+
+async function reverterConclusao(supabase, appointmentId) {
+  const { error } = await supabase.rpc('reverter_conclusao_atendimento', {
+    p_appointment_id: appointmentId,
+  })
+  if (!error || rpcAusente(error)) return { ok: true }
+  return { ok: false, error: error.message }
+}
+
 async function syncQuiet(supabase, appointment, options) {
   try {
     await syncAppointmentNotifications(supabase, appointment, options)
@@ -193,6 +213,7 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
 
   await incrementLoyaltyVisit(supabase, agendamento.client_id)
   await syncQuiet(supabase, { ...agendamento, status: 'CONCLUIDO' })
+  await sincronizarConclusao(supabase, agendamento.id)
 
   if (metodo === 'MENSALIDADE' && agendamento.client_id) {
     const { data: cli } = await supabase.from('clients').select('monthly_due_day, monthly_due_offset').eq('id', agendamento.client_id).single()
@@ -210,6 +231,9 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
 }
 
 export async function reabrirAtendimento(supabase, agendamento) {
+  const financeiro = await reverterConclusao(supabase, agendamento.id)
+  if (!financeiro.ok) return financeiro
+
   let packageUsed = null
   if (agendamento?.payment_method === 'PACOTE' && agendamento.client_id) {
     const { data: cli } = await supabase.from('clients').select('package_used').eq('id', agendamento.client_id).maybeSingle()

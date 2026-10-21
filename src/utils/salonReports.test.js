@@ -24,7 +24,8 @@ describe('relatórios do salão', () => {
     const resumo = resumoDoDia({
       now,
       appointments: [
-        { status: 'CONCLUIDO', agreed_price: 90, start_time: '2026-10-19T10:00:00' },
+        { status: 'CONCLUIDO', agreed_price: 90, payment_method: 'PIX', start_time: '2026-10-19T10:00:00' },
+        { status: 'CONCLUIDO', agreed_price: 50, payment_method: 'PENDENTE', start_time: '2026-10-19T11:00:00' },
         { status: 'AGENDADO', agreed_price: 80, start_time: '2026-10-19T15:00:00', clients: { name: 'Ana' } },
         { status: 'CANCELADO', agreed_price: 80, start_time: '2026-10-19T16:00:00' },
       ],
