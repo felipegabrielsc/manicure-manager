@@ -22,7 +22,7 @@ export function exportToCsv(movimentacoes, mesFormatado, totais) {
     ['Resumo do mês', mesFormatado],
     ['Entradas', totais.entradas.toFixed(2).replace('.', ',')],
     ['Saídas', totais.saidas.toFixed(2).replace('.', ',')],
-    ['Lucro', totais.lucro.toFixed(2).replace('.', ',')],
+    ['Resultado de caixa', totais.lucro.toFixed(2).replace('.', ',')],
   ]
 
   const csv = [header, ...rows, ...summary].map(r => r.join(';')).join('\n')
@@ -62,7 +62,7 @@ export function exportToPrint(movimentacoes, mesFormatado, totais) {
     <div class="summary">
       <div><strong>Entradas:</strong> R$ ${totais.entradas.toFixed(2)}</div>
       <div><strong>Saídas:</strong> R$ ${totais.saidas.toFixed(2)}</div>
-      <div><strong>Lucro:</strong> R$ ${totais.lucro.toFixed(2)}</div>
+      <div><strong>Resultado de caixa:</strong> R$ ${totais.lucro.toFixed(2)}</div>
     </div>
     <table><thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table>
     <script>window.onload=()=>window.print()</script>

@@ -370,10 +370,12 @@ input, select, textarea, button {
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 .fin-tabs button {
-  flex: 1;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -387,6 +389,54 @@ input, select, textarea, button {
   font-size: 14px;
   cursor: pointer;
   font-family: inherit;
+}
+
+.fin-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.fin-kpi {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.fin-kpi span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fin-kpi strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.fin-status {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.fin-status-PENDENTE { background: #ffedd5; color: #9a3412; }
+.fin-status-PARCIAL { background: #dbeafe; color: #1d4ed8; }
+.fin-status-PAGO { background: #dcfce7; color: #166534; }
+.fin-status-ESTORNADO { background: #fee2e2; color: #991b1b; }
+.fin-status-CANCELADO { background: #f1f5f9; color: #475569; }
+
+@media (min-width: 800px) {
+  .fin-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 .fin-tabs button.is-on {

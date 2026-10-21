@@ -199,9 +199,14 @@ export default function Agenda() {
     if (!result.ok) return toast.error(result.error)
     if (result.avisoMensalidade) {
       toast('Essa visita vai para a mensalidade. Cobra no vencimento (padrão: dia 10 do mês seguinte).', { icon: '📅' })
+    } else if (metodo === 'PENDENTE') {
+      toast.success('Concluído. O valor ficou a receber.')
+    } else if (metodo === 'PACOTE') {
+      toast.success('Visita do pacote registrada')
+    } else {
+      toast.success('Recebido!', { icon: '💰' })
     }
     setAgendamentos(prev => prev.map(item => item.id === apt.id ? { ...item, status: 'CONCLUIDO', payment_method: metodo } : item))
-    toast.success('Recebido!', { icon: '💰' })
     setPagamentoModalOpen(false)
     setIdParaConcluir(null)
     setAptRetorno({ ...apt, payment_method: metodo })
@@ -336,6 +341,7 @@ export default function Agenda() {
               <button onClick={() => confirmarPagamento('CARTAO')} style={btnPagamento}>💳 Cartão</button>
               <button onClick={() => confirmarPagamento('MENSALIDADE')} style={{ ...btnPagamento, background: '#fee2e2', color: '#dc2626' }}>Mensalidade (cobra no vencimento)</button>
               <button onClick={() => confirmarPagamento('PACOTE')} style={{ ...btnPagamento, gridColumn: '1 / -1', background: '#f3e8ff', color: '#6b21a8' }}>Pacote (4 ou 6 visitas)</button>
+              <button onClick={() => confirmarPagamento('PENDENTE')} style={{ ...btnPagamento, gridColumn: '1 / -1', background: '#fff7ed', color: '#9a3412' }}>Ainda não recebi</button>
             </div>
             <button onClick={() => setPagamentoModalOpen(false)} style={{ width: '100%', padding: '15px', marginTop: '15px', background: 'white', border: '1px solid #ccc', borderRadius: '8px' }}>Cancelar</button>
           </div>
