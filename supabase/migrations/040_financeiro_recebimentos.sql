@@ -715,7 +715,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_appt appointments%ROWTYPE;
+  v_apt appointments%ROWTYPE;
   v_client clients%ROWTYPE;
   v_staff_name text;
   v_percent numeric(8,2);
