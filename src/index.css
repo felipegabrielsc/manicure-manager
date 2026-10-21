@@ -445,6 +445,37 @@ input, select, textarea, button {
   color: #fff;
 }
 
+.fin-skeleton {
+  height: 72px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: fin-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes fin-pulse {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.fin-aviso {
+  background: #fff7ed;
+  color: #9a3412;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.fin-erro {
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
 .ui-page-header {
   background: #fff;
   padding: 15px 20px;

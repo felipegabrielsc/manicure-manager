@@ -20,6 +20,7 @@ import AppLayout from './components/AppLayout'
 import { SessionProfileContext } from './context/SessionProfile'
 import { checkPendingNotifications } from './utils/notifications'
 import { assembleSessionProfile } from './utils/sessionProfile'
+import { limparCacheFinanceiro } from './application/financeiroCache'
 
 const Clientes = lazy(() => import('./pages/Clientes'))
 const Servicos = lazy(() => import('./pages/Servicos'))
@@ -104,6 +105,10 @@ export default function App() {
     }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
+  }, [session?.user?.id])
+
+  useEffect(() => {
+    limparCacheFinanceiro()
   }, [session?.user?.id])
 
   useEffect(() => {
