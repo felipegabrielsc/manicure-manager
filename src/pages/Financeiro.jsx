@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, BarChart3, Calendar, Download, FileText, HelpCircle, MessageCircle, Package, PlusCircle, Printer, Target, Trash2, TrendingDown, Wallet } from 'lucide-react'
 import { driver } from 'driver.js'
@@ -6,38 +6,36 @@ import 'driver.js/dist/driver.css'
 import toast from 'react-hot-toast'
 import { supabase } from '../supabaseClient'
 import Modal from '../components/Modal'
-import FinanceOverview from '../components/FinanceOverview'
 import FinanceResumo from '../components/FinanceResumo'
 import { useSessionProfile } from '../context/SessionProfile'
 import {
   cancelarCobrancaRemota,
   estornarCobranca,
-  mapCharge,
-  mapCommission,
-  mapExpense,
-  mapPayment,
   quitarComissao,
   receberCobranca,
   sincronizarExistente,
-  uniqById,
 } from '../application/financeiroService'
-import {
-  aplicarFiltros,
-  comSaldos,
-  derivarLivro,
-  filtrarVisaoFinanceira,
-  indicadoresFinanceiros,
-  movimentacoesDoLivro,
-  roundMoney,
-  serieRecebimentos,
-} from '../domain/financeiro'
-import { classifyNewVsReturning, dailyCompare, paymentMix, sliceUntilDay, topClientsByVisits } from '../utils/financeInsights'
-import { buildSalonReport } from '../utils/salonReports'
+import { roundMoney } from '../domain/financeiro'
 import { exportAppointmentsCsv, exportToCsv, exportToPrint } from '../utils/exportReport'
-import { formatCivilDate, money, monthRangeLocal, toDateInputValue } from '../utils/dates'
+import { formatCivilDate, money, toDateInputValue } from '../utils/dates'
 import { openWhatsApp } from '../utils/whatsapp'
 import { marcarEnvioManual } from '../application/notificationService'
 import { workspaceId } from '../utils/workspace'
+import { chaveFinanceiro, gravarSeAtual, invalidarFinanceiro, lerCache, versaoCache } from '../application/financeiroCache'
+import { buscarPrincipalFinanceiro, buscarSecundarioFinanceiro } from '../application/financeiroLoad'
+import {
+  decidirSincronizacao,
+  marcarFinanceiroSujo,
+  marcarSincronizado,
+  planejarCarregamento,
+  precisaRecarregarAposSync,
+  sincronizacaoEmCurso,
+  sincronizarControlada,
+} from '../application/financeiroSync'
+import { criarMedidor } from '../application/financeiroTiming'
+import { filtrarMovimentos, montarPainelFinanceiro } from '../application/financeiroView'
+
+const FinanceOverview = lazy(() => import('../components/FinanceOverview'))
 
 const METODOS = ['PIX', 'DINHEIRO', 'CARTAO']
 const ABAS = [
@@ -55,38 +53,6 @@ const STATUS_LABEL = {
   PAGO: 'Pago',
   ESTORNADO: 'Estornado',
   CANCELADO: 'Cancelado',
-}
-
-const selectAgenda = 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, deposit_amount, deposit_status, discount_applied, staff_members (name, commission_percent), clients (id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services (name, duration_minutes)'
-const selectAgendaSemSinal = 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, staff_members (name, commission_percent), clients (id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services (name, duration_minutes)'
-
-function chavesMeses(data, quantidade = 6) {
-  const keys = []
-  for (let i = quantidade - 1; i >= 0; i -= 1) {
-    const dia = new Date(data.getFullYear(), data.getMonth() - i, 1)
-    keys.push(`${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, '0')}`)
-  }
-  return keys
-}
-
-function diarioDoMes(payments, year, month) {
-  const prefix = `${year}-${String(month + 1).padStart(2, '0')}`
-  const days = new Date(year, month + 1, 0).getDate()
-  const rows = Array.from({ length: days }, (_, index) => ({ day: index + 1, total: 0 }))
-  for (const payment of payments || []) {
-    const day = String(payment.cashDate || '')
-    if (!day.startsWith(prefix)) continue
-    const index = Number(day.slice(8, 10)) - 1
-    if (index < 0 || index >= days) continue
-    const sign = payment.entryType === 'ESTORNO' ? -1 : 1
-    rows[index].total = roundMoney(rows[index].total + sign * Number(payment.amount || 0))
-  }
-  return rows
-}
-
-function noMes(dia, from, to) {
-  const day = String(dia || '').slice(0, 10)
-  return day >= from && day <= to
 }
 
 export default function Financeiro() {
@@ -123,11 +89,17 @@ export default function Financeiro() {
   const [staffList, setStaffList] = useState([])
   const [staffFiltro, setStaffFiltro] = useState('')
   const [aba, setAba] = useState('visao')
+  const [erros, setErros] = useState({})
+  const [erroPrincipal, setErroPrincipal] = useState('')
+  const [sincronizando, setSincronizando] = useState(false)
+  const [erroSync, setErroSync] = useState('')
+  const [carregandoSecundario, setCarregandoSecundario] = useState(false)
+  const [limiteMov, setLimiteMov] = useState(40)
+  const geracao = useRef(0)
 
   const mesFormatado = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(dataAtual)
-  const periodo = monthRangeLocal(dataAtual)
-  const mesAnterior = monthRangeLocal(new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 1, 1))
   const isStaff = !!profile?.is_staff
+  const ws = workspaceId(profile)
 
   useEffect(() => {
     carregarFinanceiro()
@@ -150,227 +122,228 @@ export default function Financeiro() {
     }).drive()
   }
 
+  useEffect(() => {
+    setLimiteMov(40)
+  }, [filtroAtivo, filtroPagamento, dataAtual, staffFiltro, filtroServico])
+
+  function aplicarPacote(pacote) {
+    if ('persistido' in pacote) setPersistido(pacote.persistido)
+    if ('livro' in pacote) setLivroBruto(pacote.livro)
+    if ('agenda' in pacote) setAgendaJanela(pacote.agenda)
+    if ('auditoria' in pacote) setAuditoria(pacote.auditoria)
+    if ('estoque' in pacote) setEstoque(pacote.estoque)
+    if ('staffList' in pacote) setStaffList(pacote.staffList)
+    if ('clientesNovos' in pacote) setClientesNovos(pacote.clientesNovos)
+    if ('caixaHoje' in pacote) setCaixaHoje(pacote.caixaHoje)
+    if ('metaMes' in pacote) setMetaMes(pacote.metaMes)
+    if ('erros' in pacote) setErros((atual) => ({ ...atual, ...pacote.erros }))
+  }
+
+  function chaveDoMes() {
+    return chaveFinanceiro(ws, dataAtual.getFullYear(), dataAtual.getMonth())
+  }
+
+  function publicarPrincipal(principal, versao) {
+    if (principal.erroPrincipal) {
+      setErroPrincipal(principal.erroPrincipal)
+      if (principal.erroPrincipal.includes('cobranças')) toast.error(principal.erroPrincipal)
+    } else {
+      setErroPrincipal('')
+    }
+    aplicarPacote({
+      persistido: principal.persistido,
+      livro: principal.livro,
+      agenda: principal.agenda || [],
+      erros: principal.erros || {},
+    })
+    const incompleto = principal.erroPrincipal || principal.erros?.despesas || principal.erros?.comissao
+    if (!principal.livro || incompleto) return
+    gravarSeAtual(chaveDoMes(), {
+      persistido: principal.persistido,
+      livro: principal.livro,
+      agenda: principal.agenda || [],
+      secundarioCompleto: false,
+    }, Date.now(), versao)
+  }
+
+  async function aposSincronizacao(token, sync) {
+    if (geracao.current !== token) return
+    setSincronizando(false)
+    if (!sync?.ok) {
+      setErroSync(sync?.error || 'Não consegui conferir os lançamentos. Os números podem estar incompletos.')
+      return
+    }
+    marcarSincronizado(ws, Date.now())
+    setErroSync('')
+    if (!precisaRecarregarAposSync(sync)) return
+    const deNovo = await buscarPrincipalFinanceiro(supabase, {
+      dataAtual,
+      temTabela: true,
+      medidor: criarMedidor('financeiro-sync'),
+    })
+    if (geracao.current !== token) return
+    publicarPrincipal(deNovo, versaoCache(chaveDoMes()))
+  }
+
+  async function carregarSecundario(token, temTabela, agenda, versao) {
+    setCarregandoSecundario(true)
+    const medidor = criarMedidor('financeiro-secundario')
+    const secundario = await buscarSecundarioFinanceiro(supabase, {
+      dataAtual,
+      temTabela,
+      agenda,
+      workspaceId: ws,
+      medidor,
+    })
+    medidor.fim({ fase: 'secundario' })
+    if (geracao.current !== token) return
+    const pacote = { erros: secundario.erros || {} }
+    if (!secundario.erros?.equipe) pacote.staffList = secundario.staffList
+    if (!secundario.erros?.estoque) pacote.estoque = secundario.estoque
+    if (!secundario.erros?.auditoria) pacote.auditoria = secundario.auditoria
+    if (!secundario.erros?.clientes) pacote.clientesNovos = secundario.clientesNovos
+    if (!secundario.erros?.caixa && secundario.caixaHoje) pacote.caixaHoje = secundario.caixaHoje
+    if (!secundario.erros?.meta) pacote.metaMes = secundario.metaMes
+    aplicarPacote(pacote)
+    const chave = chaveDoMes()
+    const anterior = lerCache(chave, Date.now())
+    if (anterior?.valor?.livro) {
+      gravarSeAtual(chave, {
+        ...anterior.valor,
+        ...pacote,
+        secundarioCompleto: true,
+      }, Date.now(), versao)
+    }
+    setCarregandoSecundario(false)
+  }
+
   async function carregarFinanceiro() {
+    const token = ++geracao.current
+    const medidor = criarMedidor()
+    const chave = chaveFinanceiro(ws, dataAtual.getFullYear(), dataAtual.getMonth())
+    const agora = Date.now()
+    const cacheItem = lerCache(chave, agora)
+    const versao = versaoCache(chave)
+    const decisaoCache = decidirSincronizacao({
+      temTabela: cacheItem ? cacheItem.valor?.persistido !== false : false,
+      workspaceId: ws,
+      agora,
+    })
+    const plano = planejarCarregamento({
+      cacheItem,
+      decisao: decisaoCache,
+      sincronizando: !!sincronizacaoEmCurso(ws),
+    })
+
+    if (plano.usarCache) {
+      aplicarPacote(cacheItem.valor)
+      setErroPrincipal('')
+      setLoading(false)
+      medidor.fim({ origem: 'cache' })
+      if (!cacheItem.valor?.secundarioCompleto) {
+        carregarSecundario(token, !!cacheItem.valor?.persistido, cacheItem.valor?.agenda || [], versao)
+      }
+      if (plano.acompanharSync) {
+        setSincronizando(true)
+        sincronizacaoEmCurso(ws).then((sync) => aposSincronizacao(token, sync))
+      }
+      return
+    }
+
     setLoading(true)
-    const { start, end, startDay, endDay } = monthRangeLocal(dataAtual)
-    const inicio = new Date(dataAtual.getFullYear(), dataAtual.getMonth() - 5, 1)
-    const inicioDia = toDateInputValue(inicio)
-    const probe = await supabase.from('financial_charges').select('id').limit(1)
+    setErroPrincipal('')
+    setErros({})
+    const probe = await medidor.etapa('tabela', () => supabase.from('financial_charges').select('id').limit(1))
+    if (geracao.current !== token) return
+    const mensagemProbe = probe.error?.message || ''
+    const tabelaAusente = !!probe.error && /schema cache|does not exist|financial_charges|PGRST205|PGRST202|404/i.test(mensagemProbe)
+    if (probe.error && !tabelaAusente) {
+      setErroPrincipal('Não consegui consultar o financeiro. Tente de novo.')
+      setLoading(false)
+      medidor.fim({ origem: 'erro' })
+      return
+    }
     const temTabela = !probe.error
     setPersistido(temTabela)
-    if (temTabela) await sincronizarExistente(supabase)
-
-    let agendaQuery = await supabase.from('appointments').select(selectAgenda).gte('start_time', inicio.toISOString()).lte('start_time', end.toISOString())
-    if (agendaQuery.error?.message?.includes('deposit_')) {
-      agendaQuery = await supabase.from('appointments').select(selectAgendaSemSinal).gte('start_time', inicio.toISOString()).lte('start_time', end.toISOString())
-    }
-    const agenda = agendaQuery.data || []
-    setAgendaJanela(agenda)
-
-    const { data: transacoes } = await supabase.from('transactions').select('*').gte('date', inicioDia).lte('date', `${endDay}T23:59:59`)
-    const { data: clientesMensais } = await supabase.from('clients').select('*').eq('type', 'MENSALISTA')
-    const { data: itens } = await supabase.from('inventory_items').select('*').order('name')
-    setEstoque(itens || [])
-    const { data: equipe } = await supabase.from('staff_members').select('id, name').eq('active', true).order('name')
-    setStaffList(equipe || [])
-
-    let livro
-    if (temTabela) {
-      const [porCompetencia, porVencimento] = await Promise.all([
-        supabase.from('financial_charges').select('*, clients(name, phone), staff_members(name)').gte('competence_date', inicioDia).lte('competence_date', endDay),
-        supabase.from('financial_charges').select('*, clients(name, phone), staff_members(name)').gte('due_date', startDay).lte('due_date', endDay),
-      ])
-      if (porCompetencia.error || porVencimento.error) {
-        toast.error('Não consegui ler as cobranças novas. Os números seguem o cálculo da agenda.')
-        setPersistido(false)
-      } else {
-      let chargeRows = uniqById([...(porCompetencia.data || []), ...(porVencimento.data || [])])
-      const recebidos = await supabase.from('financial_payments').select('*').gte('received_at', inicio.toISOString()).lte('received_at', end.toISOString())
-      let paymentRows = recebidos.data || []
-      const ids = chargeRows.map((charge) => charge.id)
-      if (ids.length) {
-        const ligados = await supabase.from('financial_payments').select('*').in('charge_id', ids)
-        paymentRows = uniqById([...paymentRows, ...(ligados.data || [])])
+    const decisao = decidirSincronizacao({ temTabela, workspaceId: ws, agora: Date.now() })
+    let syncPromise = null
+    if (decisao.executar && decisao.bloquearLeitura) {
+      setSincronizando(true)
+      const sync = await medidor.etapa('sincronizacao', () => sincronizarControlada(supabase, ws))
+      if (geracao.current !== token) return
+      setSincronizando(false)
+      if (!sync.ok) setErroSync(sync.error || 'Não consegui conferir os lançamentos. Os números podem estar incompletos.')
+      else {
+        marcarSincronizado(ws, Date.now())
+        setErroSync('')
       }
-      const presentes = new Set(chargeRows.map((charge) => charge.id))
-      const faltantes = [...new Set(paymentRows.map((payment) => payment.charge_id).filter((id) => id && !presentes.has(id)))]
-      if (faltantes.length) {
-        const extra = await supabase.from('financial_charges').select('*, clients(name, phone), staff_members(name)').in('id', faltantes)
-        chargeRows = uniqById([...chargeRows, ...(extra.data || [])])
-      }
-      const comissoesQuery = await supabase.from('commission_entries').select('*').gte('recognized_at', startDay).lte('recognized_at', endDay)
-      const auditQuery = await supabase.from('financial_audit_log').select('id, entity, action, created_at').order('created_at', { ascending: false }).limit(12)
-      livro = {
-        charges: chargeRows.map(mapCharge),
-        payments: paymentRows.map(mapPayment),
-        expenses: (transacoes || []).map(mapExpense).filter(Boolean),
-        commissions: (comissoesQuery.data || []).map(mapCommission),
-      }
-      setAuditoria(auditQuery.data || [])
-      }
-    }
-    if (!livro) {
-      livro = derivarLivro({
-        appointments: agenda,
-        transactions: transacoes || [],
-        clients: clientesMensais || [],
-        viewDate: dataAtual,
-      })
-      setAuditoria([])
-    }
-    setLivroBruto(livro)
-
-    const doMes = agenda.filter((item) => {
-      const dia = new Date(item.start_time)
-      return dia >= start && dia <= end
-    })
-    const concluidos = doMes.filter((item) => item.status === 'CONCLUIDO')
-    const monthIds = concluidos.map((item) => item.client_id).filter(Boolean)
-    let prior = []
-    const uniqueIds = [...new Set(monthIds)]
-    if (uniqueIds.length) {
-      const { data } = await supabase.from('appointments').select('client_id').eq('status', 'CONCLUIDO').lt('start_time', start.toISOString()).in('client_id', uniqueIds)
-      prior = (data || []).map((item) => item.client_id)
-    }
-    setClientesNovos({ monthIds, prior })
-
-    const hoje = toDateInputValue()
-    const hojeIni = new Date()
-    hojeIni.setHours(0, 0, 0, 0)
-    const hojeFim = new Date()
-    hojeFim.setHours(23, 59, 59, 999)
-    const [{ data: aptsHoje }, { data: txHoje }] = await Promise.all([
-      supabase.from('appointments').select('id, status, agreed_price, start_time, payment_method, staff_id, client_id, clients(name), services(name), staff_members(name, commission_percent)').gte('start_time', hojeIni.toISOString()).lte('start_time', hojeFim.toISOString()),
-      supabase.from('transactions').select('*').gte('date', hoje).lte('date', `${hoje}T23:59:59`),
-    ])
-    let livroHoje
-    if (temTabela) {
-      const pays = await supabase.from('financial_payments').select('*').gte('received_at', hojeIni.toISOString()).lte('received_at', hojeFim.toISOString())
-      livroHoje = {
-        charges: [],
-        payments: (pays.data || []).map(mapPayment),
-        expenses: (txHoje || []).map(mapExpense).filter(Boolean),
-        commissions: [],
-      }
+    } else if (decisao.executar) {
+      setSincronizando(true)
+      syncPromise = medidor.etapa('sincronizacao', () => sincronizarControlada(supabase, ws))
     } else {
-      livroHoje = derivarLivro({ appointments: aptsHoje || [], transactions: txHoje || [] })
+      console.info('[financeiro] sincronizacao ignorada', decisao.motivo)
     }
-    const indHoje = indicadoresFinanceiros({ ...livroHoje, from: hoje, to: hoje })
-    setCaixaHoje({
-      entradas: indHoje.recebimentos,
-      saidas: indHoje.despesasPagas,
-      atendimentos: (aptsHoje || []).filter((item) => item.status === 'CONCLUIDO').length,
-    })
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data: goal } = await supabase.from('financial_goals').select('target_amount')
-        .eq('user_id', workspaceId(profile, user.id))
-        .eq('year', dataAtual.getFullYear())
-        .eq('month', dataAtual.getMonth() + 1)
-        .maybeSingle()
-      setMetaMes(goal?.target_amount || 0)
-    }
+    const principal = await buscarPrincipalFinanceiro(supabase, { dataAtual, temTabela, medidor })
+    if (geracao.current !== token) return
+    publicarPrincipal(principal, versao)
     setLoading(false)
+    medidor.fim({ origem: 'rede', sync: decisao.motivo })
+    carregarSecundario(token, principal.persistido, principal.agenda || [], versao)
+    if (syncPromise) {
+      const sync = await syncPromise
+      await aposSincronizacao(token, sync)
+    }
   }
 
-  const base = filtrarVisaoFinanceira({
-    isStaff,
-    staffId: profile?.staff_member_id,
-    charges: livroBruto?.charges || [],
-    payments: livroBruto?.payments || [],
-    expenses: livroBruto?.expenses || [],
-    commissions: livroBruto?.commissions || [],
-  })
-  const livro = aplicarFiltros(base, { staffId: staffFiltro, service: filtroServico })
-  const indicadores = indicadoresFinanceiros({ ...livro, from: periodo.startDay, to: periodo.endDay })
-  const anterior = indicadoresFinanceiros({ ...livro, from: mesAnterior.startDay, to: mesAnterior.endDay })
-  const saldos = comSaldos(livro.charges, livro.payments)
-  const abertas = saldos.filter((charge) => charge.pending > 0 && charge.countsAsRevenue !== false)
-  const mensalidades = saldos.filter((charge) => (
-    charge.kind === 'MENSALIDADE'
-    && (noMes(charge.competenceDate, periodo.startDay, periodo.endDay) || noMes(charge.dueDate, periodo.startDay, periodo.endDay))
-  ))
-  const comissoesMes = (livro.commissions || []).filter((item) => item.status !== 'CANCELADO')
-  const aPagar = comissoesMes.filter((item) => item.status === 'PENDENTE')
-  const movimentos = movimentacoesDoLivro(livro).filter((item) => {
-    if (!noMes(item.date, periodo.startDay, periodo.endDay)) return false
-    if (filtroAtivo === 'SERVICO' && item.category !== 'servico') return false
-    if (filtroAtivo === 'PRODUTO' && item.category !== 'produto') return false
-    if (filtroAtivo === 'MENSAL' && item.category !== 'mensalidade') return false
-    if (filtroAtivo === 'DESPESA' && item.type !== 'DESPESA') return false
-    if (filtroPagamento === 'MENSALIDADE') return item.category === 'mensalidade'
-    if (filtroPagamento !== 'TODOS' && item.payment_method !== filtroPagamento) return false
-    return true
-  })
-  const agendaMes = agendaJanela.filter((item) => {
-    const dia = new Date(item.start_time)
-    return dia >= periodo.start && dia <= periodo.end
-  })
-  const concluidosMes = agendaMes.filter((item) => item.status === 'CONCLUIDO')
-  const concluidosAnterior = agendaJanela.filter((item) => {
-    if (item.status !== 'CONCLUIDO') return false
-    const dia = new Date(item.start_time)
-    return dia >= mesAnterior.start && dia <= mesAnterior.end
-  })
-  const servicos = [...new Set(saldos.map((charge) => charge.serviceName).filter(Boolean))]
-  const serie = serieRecebimentos(livro.payments, chavesMeses(dataAtual))
-  const diario = diarioDoMes(livro.payments, dataAtual.getFullYear(), dataAtual.getMonth())
-  const relatorio = buildSalonReport(agendaMes)
-  const progressoMeta = metaMes > 0 ? Math.min(100, (indicadores.recebimentos / metaMes) * 100) : 0
-  const estornados = new Set(livro.payments.filter((payment) => payment.reversalOf).map((payment) => payment.reversalOf))
-
-  const recNow = livro.payments.filter((payment) => noMes(payment.cashDate, periodo.startDay, periodo.endDay)).map((payment) => ({
-    date: `${payment.cashDate}T12:00:00`,
-    amount: payment.entryType === 'ESTORNO' ? -Number(payment.amount) : Number(payment.amount),
-  }))
-  const recPrev = livro.payments.filter((payment) => noMes(payment.cashDate, mesAnterior.startDay, mesAnterior.endDay)).map((payment) => ({
-    date: `${payment.cashDate}T12:00:00`,
-    amount: payment.entryType === 'ESTORNO' ? -Number(payment.amount) : Number(payment.amount),
-  }))
-  const moneyRows = dailyCompare(recNow, recPrev, dataAtual.getFullYear(), dataAtual.getMonth())
-  const hojeData = new Date()
-  const diaCorte = (hojeData.getFullYear() === dataAtual.getFullYear() && hojeData.getMonth() === dataAtual.getMonth())
-    ? hojeData.getDate()
-    : new Date(dataAtual.getFullYear(), dataAtual.getMonth() + 1, 0).getDate()
-  const ateHoje = sliceUntilDay(moneyRows, diaCorte)
-  const overview = {
-    mesLabel: mesFormatado,
-    mesAnteriorLabel: new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(mesAnterior.start),
-    kpis: {
-      faturamento: indicadores.faturamento,
-      despesas: indicadores.despesasPagas,
-      despesasPagas: indicadores.despesasPagas,
-      lucro: indicadores.resultadoCaixa,
-      resultadoCaixa: indicadores.resultadoCaixa,
-      resultadoOperacional: indicadores.resultadoOperacional,
-      recebimentos: indicadores.recebimentos,
-      contasAReceber: indicadores.contasAReceber,
-      prevResultadoCaixa: anterior.resultadoCaixa,
-      prevLucro: anterior.resultadoCaixa,
-      atendimentos: concluidosMes.length,
-      ticket: concluidosMes.length ? indicadores.faturamento / concluidosMes.length : 0,
-      prevFaturamento: anterior.faturamento,
-      prevAtendimentos: concluidosAnterior.length,
-      prevTicket: concluidosAnterior.length ? anterior.faturamento / concluidosAnterior.length : 0,
-    },
-    daily: moneyRows,
-    comparacao: { dia: diaCorte, ...ateHoje },
-    projecao: {
-      confirmado: indicadores.faturamento,
-      pendente: agendaMes.filter((item) => item.status === 'PENDENTE' || item.status === 'AGENDADO').reduce((sum, item) => sum + (Number(item.agreed_price) || 0), 0),
-    },
-    clientes: {
-      ...classifyNewVsReturning(clientesNovos.monthIds, new Set(clientesNovos.prior)),
-      top5: topClientsByVisits(concluidosMes),
-    },
-    pagamentos: paymentMix(livro.payments.filter((payment) => payment.entryType !== 'ESTORNO' && noMes(payment.cashDate, periodo.startDay, periodo.endDay)).map((payment) => ({
-      payment_method: payment.method,
-      amount: payment.amount,
-    }))),
+  function recarregar() {
+    invalidarFinanceiro(ws)
+    carregarFinanceiro()
   }
+
+  const painel = useMemo(() => (
+    livroBruto ? montarPainelFinanceiro({
+      livroBruto,
+      agendaJanela,
+      dataAtual,
+      isStaff,
+      staffMemberId: profile?.staff_member_id,
+      staffFiltro,
+      filtroServico,
+      clientesNovos,
+      metaMes,
+    }) : null
+  ), [livroBruto, agendaJanela, dataAtual, isStaff, profile?.staff_member_id, staffFiltro, filtroServico, clientesNovos, metaMes])
+
+  const indicadores = painel?.indicadores || {
+    recebimentos: 0,
+    despesasPagas: 0,
+    resultadoCaixa: 0,
+    resultadoOperacional: 0,
+    faturamento: 0,
+    contasAReceber: 0,
+  }
+  const abertas = painel?.abertas || []
+  const mensalidades = painel?.mensalidades || []
+  const comissoesMes = painel?.comissoesMes || []
+  const aPagar = painel?.aPagar || []
+  const agendaMes = painel?.agendaMes || []
+  const servicos = painel?.servicos || []
+  const serie = painel?.serie || []
+  const diario = painel?.diario || []
+  const relatorio = painel?.relatorio || { ocupacao: 0, faltas: 0, retorno: 0 }
+  const progressoMeta = painel?.progressoMeta || 0
+  const estornados = painel?.estornados || new Set()
+  const overview = painel?.overview
+  const movimentos = useMemo(() => filtrarMovimentos(painel?.movimentosTodos || [], {
+    from: painel?.periodo?.startDay,
+    to: painel?.periodo?.endDay,
+    categoria: filtroAtivo,
+    pagamento: filtroPagamento,
+  }), [painel, filtroAtivo, filtroPagamento])
 
   async function salvarMeta() {
+
     const valorMeta = parseFloat(String(metaInput).replace(',', '.'))
     if (!valorMeta || valorMeta <= 0) return toast.error('Informe um valor válido')
     const { data: { user } } = await supabase.auth.getUser()
@@ -384,6 +357,7 @@ export default function Financeiro() {
     else {
       setMetaMes(valorMeta)
       setEditandoMeta(false)
+      invalidarFinanceiro(ws)
       toast.success('Meta definida!')
     }
   }
@@ -452,7 +426,7 @@ export default function Financeiro() {
       if (error) return toast.error(error.message)
       setCobrancaAlvo(null)
       toast.success('Recebimento salvo')
-      carregarFinanceiro()
+      recarregar()
       return
     }
     const result = await receberCobranca(supabase, {
@@ -466,7 +440,7 @@ export default function Financeiro() {
     if (!result.ok) return toast.error(result.missing ? 'Rode o SQL 040 no Supabase.' : result.error)
     setCobrancaAlvo(null)
     toast.success(result.duplicated ? 'Esse recebimento já estava registrado' : 'Recebimento salvo')
-    carregarFinanceiro()
+    recarregar()
   }
 
   async function handleSalvarLancamento(event) {
@@ -525,10 +499,21 @@ export default function Financeiro() {
       const item = estoque.find((produto) => produto.id === inventoryItemId)
       await supabase.from('inventory_items').update({ quantity: Math.max(0, Number(item.quantity) - qtd) }).eq('id', inventoryItemId)
     }
-    if (persistido) await sincronizarExistente(supabase)
+    if (persistido) {
+      marcarFinanceiroSujo(ws)
+      const sync = await sincronizarExistente(supabase)
+      if (!sync.ok) {
+        const aviso = sync.error || 'Não consegui vincular o lançamento. Os números podem estar incompletos.'
+        setErroSync(aviso)
+        toast.error(aviso)
+      } else {
+        marcarSincronizado(ws, Date.now())
+        setErroSync('')
+      }
+    }
     setShowForm(false)
     toast.success(error ? 'Lançamento já estava registrado' : 'Lançamento salvo')
-    carregarFinanceiro()
+    recarregar()
   }
 
   async function executarExclusao() {
@@ -545,7 +530,7 @@ export default function Financeiro() {
     const { error } = await supabase.from('transactions').delete().eq('id', idParaExcluir)
     if (!error) {
       setModal({ isOpen: false })
-      carregarFinanceiro()
+      recarregar()
     } else toast.error(error.message || 'Erro ao excluir')
   }
 
@@ -558,7 +543,7 @@ export default function Financeiro() {
     })
     if (!result.ok) return toast.error(result.error)
     toast.success(result.duplicated ? 'Estorno já registrado' : 'Recebimento estornado')
-    carregarFinanceiro()
+    recarregar()
   }
 
   async function cancelar(charge) {
@@ -566,7 +551,7 @@ export default function Financeiro() {
     const result = await cancelarCobrancaRemota(supabase, charge.id)
     if (!result.ok) return toast.error(result.error)
     toast.success('Cobrança cancelada')
-    carregarFinanceiro()
+    recarregar()
   }
 
   async function pagarComissao(commission) {
@@ -579,7 +564,7 @@ export default function Financeiro() {
     })
     if (!result.ok) return toast.error(result.error)
     toast.success(result.duplicated ? 'Comissão já estava paga' : 'Comissão lançada nas despesas')
-    carregarFinanceiro()
+    recarregar()
   }
 
   function mudarMes(delta) {
@@ -617,9 +602,17 @@ export default function Financeiro() {
       </div>
 
       <div className="page-inner" style={{ padding: 20 }}>
-        {loading && <p style={{ textAlign: 'center', color: '#94a3b8' }}>Carregando...</p>}
-        {!persistido && !loading && (
-          <p style={{ background: '#fff7ed', color: '#9a3412', borderRadius: 12, padding: 12, fontSize: 13 }}>
+        {erroPrincipal && (
+          <p className="fin-erro">
+            {erroPrincipal}{' '}
+            <button type="button" onClick={recarregar} style={linkBtn}>Tentar de novo</button>
+          </p>
+        )}
+        {erroSync && <p className="fin-aviso">{erroSync}</p>}
+        {sincronizando && <p style={{ color: '#64748b', fontSize: 13 }}>Conferindo lançamentos novos…</p>}
+        {erros.despesas && <p className="fin-aviso">{erros.despesas}</p>}
+        {!persistido && !loading && !erroPrincipal && (
+          <p className="fin-aviso">
             Os números já separam faturamento e caixa. Para gravar pagamento parcial, estorno e comissão histórica, rode o SQL 040 no Supabase. Faça um backup antes.
           </p>
         )}
@@ -658,9 +651,13 @@ export default function Financeiro() {
           </div>
         )}
 
+        {aba === 'visao' && loading && !livroBruto && <EsqueletoFinanceiro />}
         {aba === 'visao' && livroBruto && (
           <>
             <FinanceResumo mesLabel={mesFormatado} indicadores={indicadores} serieMensal={serie} diario={diario} />
+            {erros.comissao && <p className="fin-aviso">{erros.comissao}</p>}
+            {carregandoSecundario && !caixaHoje && <div className="fin-skeleton" style={{ margin: '14px 0' }} />}
+            {erros.caixa && <p className="fin-aviso">{erros.caixa}</p>}
             {caixaHoje && (
               <div className="ui-card" style={{ padding: 16, margin: '14px 0' }}>
                 <h3 style={{ margin: '0 0 10px', fontSize: 14 }}>Caixa de hoje</h3>
@@ -687,7 +684,7 @@ export default function Financeiro() {
                     <input value={metaInput} onChange={(event) => setMetaInput(event.target.value)} style={{ ...inputStyle, flex: 1 }} inputMode="decimal" placeholder="Ex: 5000" />
                     <button type="button" onClick={salvarMeta} style={btnSalvar}>Salvar</button>
                   </div>
-                ) : metaMes > 0 ? (
+                ) : erros.meta ? <p className="fin-aviso">{erros.meta}</p> : metaMes > 0 ? (
                   <div style={{ marginTop: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}><span>R$ {money(indicadores.recebimentos)} de R$ {money(metaMes)}</span><strong>{progressoMeta.toFixed(0)}%</strong></div>
                     <div style={{ height: 10, background: '#e2e8f0', borderRadius: 5, overflow: 'hidden', marginTop: 8 }}><div style={{ height: '100%', width: `${progressoMeta}%`, background: '#2563eb' }} /></div>
@@ -723,6 +720,8 @@ export default function Financeiro() {
                 {tipoLancamento === 'PRODUTO' ? (
                   <>
                     <label style={lbl}>Produto</label>
+                    {erros.estoque && <p className="fin-aviso">{erros.estoque}</p>}
+                    {carregandoSecundario && estoque.length === 0 && <div className="fin-skeleton" />}
                     <select value={itemVendaId} onChange={(event) => onEscolherProduto(event.target.value)} style={inputStyle}>
                       <option value="">Selecione...</option>
                       {estoque.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.quantity} {item.unit})</option>)}
@@ -754,8 +753,9 @@ export default function Financeiro() {
               </form>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {movimentos.length === 0 && <p style={{ textAlign: 'center', color: '#888' }}>Nada encontrado neste filtro.</p>}
-              {movimentos.map((item) => (
+              {loading && !livroBruto && <EsqueletoFinanceiro />}
+              {!loading && movimentos.length === 0 && <p style={{ textAlign: 'center', color: '#888' }}>Nada encontrado neste filtro.</p>}
+              {movimentos.slice(0, limiteMov).map((item) => (
                 <div key={item.id} style={{ background: 'white', padding: 15, borderRadius: 8, border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', borderLeft: `5px solid ${item.type === 'DESPESA' || item.type === 'ESTORNO' ? '#dc2626' : '#16a34a'}` }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     {iconeMov(item)}
@@ -775,6 +775,11 @@ export default function Financeiro() {
                   </div>
                 </div>
               ))}
+              {movimentos.length > limiteMov && (
+                <button type="button" onClick={() => setLimiteMov((atual) => atual + 40)} style={{ ...btnCinza, width: '100%' }}>
+                  Mostrar mais ({movimentos.length - limiteMov})
+                </button>
+              )}
             </div>
           </>
         )}
@@ -820,6 +825,7 @@ export default function Financeiro() {
 
         {aba === 'comissao' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {erros.comissao && <p className="fin-aviso">{erros.comissao}</p>}
             {comissoesMes.some((item) => item.estimated) && <p style={{ color: '#9a3412', fontSize: 13 }}>Estas comissões ainda usam o percentual atual. Depois do SQL 040, uma mudança futura não altera o que já foi gravado.</p>}
             {comissoesMes.length === 0 && <p style={{ color: '#64748b' }}>Nenhuma comissão neste mês.</p>}
             {comissoesMes.map((item) => (
@@ -844,7 +850,13 @@ export default function Financeiro() {
                 <div><span style={mini}>Retorno</span><strong>{relatorio.retorno}%</strong></div>
               </div>
             </div>
-            <FinanceOverview {...overview} />
+            {overview && (
+              <Suspense fallback={<div className="fin-skeleton" style={{ height: 180 }} />}>
+                <FinanceOverview {...overview} />
+              </Suspense>
+            )}
+            {erros.auditoria && <p className="fin-aviso">{erros.auditoria}</p>}
+            {carregandoSecundario && auditoria.length === 0 && <div className="fin-skeleton" />}
             {auditoria.length > 0 && (
               <div className="ui-card" style={{ padding: 16 }}>
                 <h3 style={{ marginTop: 0 }}>Auditoria recente</h3>
@@ -880,6 +892,17 @@ export default function Financeiro() {
           </form>
         )}
       </div>
+    </div>
+  )
+}
+
+function EsqueletoFinanceiro() {
+  return (
+    <div className="fin-kpis" aria-hidden="true">
+      <div className="fin-skeleton" />
+      <div className="fin-skeleton" />
+      <div className="fin-skeleton" />
+      <div className="fin-skeleton" />
     </div>
   )
 }

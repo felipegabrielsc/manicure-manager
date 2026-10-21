@@ -85,9 +85,23 @@ export function uniqById(rows) {
 }
 
 export async function sincronizarExistente(supabase) {
-  const { error } = await supabase.rpc('sincronizar_financeiro_existente')
-  if (!error) return { ok: true }
-  return { ok: false, missing: ausente(error), error: error.message }
+  const { data, error } = await supabase.rpc('sincronizar_financeiro_existente')
+  if (!error && data?.ok !== false) {
+    return {
+      ok: true,
+      appointments: typeof data?.appointments === 'number' ? data.appointments : null,
+      data,
+    }
+  }
+  if (error) return { ok: false, missing: ausente(error), error: error.message }
+  return { ok: false, error: data?.reason || 'Não foi possível conferir os lançamentos', data }
+}
+
+/** A função reprocessa atendimentos. Sem o contador, recarrega para não esconder um backfill. */
+export function precisaRecarregarAposSync(result) {
+  if (!result?.ok) return false
+  if (typeof result.appointments === 'number') return result.appointments > 0
+  return true
 }
 
 export async function receberCobranca(supabase, input) {
