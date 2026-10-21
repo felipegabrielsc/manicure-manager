@@ -207,6 +207,22 @@ describe('cache por salão', () => {
 })
 
 describe('consultas do financeiro', () => {
+  it('não pede staff_id em transactions', async () => {
+    const colunas = COLUNAS.transacao.split(',').map((coluna) => coluna.trim())
+    expect(colunas).not.toContain('staff_id')
+    const supabase = cliente(() => ({ data: [], error: null }))
+    await buscarPrincipalFinanceiro(supabase, { dataAtual: outubro, temTabela: true })
+    await buscarSecundarioFinanceiro(supabase, {
+      dataAtual: outubro,
+      temTabela: true,
+      agenda: [],
+      workspaceId: 'salao-a',
+    })
+    const selects = supabase.chamadas.filter((item) => item.table === 'transactions' && item.op === 'select')
+    expect(selects.length).toBeGreaterThanOrEqual(2)
+    expect(selects.every((item) => item.cols === COLUNAS.transacao)).toBe(true)
+  })
+
   it('pede só as colunas usadas e separa a janela da agenda da janela do gráfico', async () => {
     const supabase = cliente((estado) => {
       if (estado.table === 'financial_charges') return { data: [cobranca()], error: null }

@@ -14,7 +14,7 @@ export const COLUNAS = {
   agenda: 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, deposit_amount, deposit_status, discount_applied, staff_members(name, commission_percent), clients(id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services(name, duration_minutes)',
   agendaSemSinal: 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, staff_members(name, commission_percent), clients(id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services(name, duration_minutes)',
   agendaHoje: 'id, status, agreed_price, start_time, payment_method, staff_id, client_id, clients(name), services(name), staff_members(name, commission_percent)',
-  transacao: 'id, user_id, type, category, amount, date, description, commission_entry_id, payment_method, inventory_item_id, quantity, charge_id, payment_id, client_id, staff_id',
+  transacao: 'id, user_id, type, category, amount, date, description, commission_entry_id, payment_method, inventory_item_id, quantity, charge_id, payment_id, client_id',
   cliente: 'id, name, phone, type, monthly_fee, monthly_due_day, monthly_due_offset',
   cobranca: 'id, user_id, kind, source_key, appointment_id, client_id, staff_id, service_name, description, competence_date, due_date, original_amount, discount_amount, recognizes_revenue, status, cancelled_at, visit_count, clients(name, phone), staff_members(name)',
   pagamento: 'id, user_id, charge_id, amount, method, reference, entry_type, reversal_of, received_at, idempotency_key',
