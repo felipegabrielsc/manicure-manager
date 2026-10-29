@@ -45,6 +45,16 @@ export async function cancelPending(supabase, { appointmentId, types } = {}) {
 }
 
 export async function syncAppointmentNotifications(supabase, appointment, options = {}) {
+  let atual = appointment
+  if (appointment?.client_id && appointment?.clients?.bot_messages_enabled == null && appointment?.bot_messages_enabled == null) {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('bot_messages_enabled')
+      .eq('id', appointment.client_id)
+      .maybeSingle()
+    if (!error && data) atual = { ...appointment, bot_messages_enabled: data.bot_messages_enabled }
+  }
+
   let reminderHours = options.reminderHours
   let remindersEnabled = options.remindersEnabled
   let maintenanceDays = options.maintenanceDays
@@ -67,13 +77,17 @@ export async function syncAppointmentNotifications(supabase, appointment, option
   }
 
   const rows = planAppointmentNotifications({
-    appointment,
+    appointment: atual,
     reminderHours,
     remindersEnabled,
     now: options.now,
     rescheduled: options.rescheduled,
     maintenanceDays,
   })
+  if (!rows.length) {
+    await cancelPending(supabase, { appointmentId: appointment.id })
+    return { ok: true, skipped: true, rows }
+  }
   const keepKeys = rows.filter((row) => row.status !== 'cancelled').map((row) => row.idempotency_key)
   await cancelStale(supabase, appointment.id, keepKeys)
   const { error } = await supabase

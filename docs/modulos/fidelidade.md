@@ -14,7 +14,7 @@ Contar visitas e cadastrar cupom de desconto.
 
 ## D. Fluxo
 
-Salvar programa grava `loyalty_settings`. Criar cupom insere em `coupons` com o código em maiúsculas. No novo horário, Aplicar chama a validação e mostra o desconto. Na conclusão, `loyalty_visits` sobe 1 se o programa não estiver desligado.
+Salvar programa grava `loyalty_settings`. O programa abre desligado. Criar cupom insere em `coupons` com o código em maiúsculas. No novo horário, Aplicar chama a validação e mostra o desconto. Na conclusão, `loyalty_visits` sobe 1 só com o programa salvo como ativo e com a feature no plano.
 
 ## E. Banco
 
@@ -22,7 +22,7 @@ Salvar programa grava `loyalty_settings`. Criar cupom insere em `coupons` com o 
 
 ## F. Regras
 
-`active === false` impede o incremento. Sem linha de configuração, o incremento acontece. O prêmio é texto. Não há resgate automático no código da conclusão. Cupom guarda `discount_type` `percent` ou `fixed`, valor e máximo de usos. O uso sobe em `criarAgendamento` com um update separado.
+`active === true` é o que libera o incremento. Sem linha, ou com a chave desligada, a visita não conta. Plano sem `Fidelidade` também não conta. O prêmio é texto. Não há resgate automático no código da conclusão. Cupom guarda `discount_type` `percent` ou `fixed`, valor e máximo de usos. O uso sobe em `criarAgendamento` com um update separado.
 
 ## G. Dependências
 

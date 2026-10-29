@@ -655,6 +655,19 @@ export default function Financeiro() {
         {aba === 'visao' && livroBruto && (
           <>
             <FinanceResumo mesLabel={mesFormatado} indicadores={indicadores} serieMensal={serie} diario={diario} />
+            {abertas.length > 0 && (
+              <div className="ui-card" style={{ padding: 16, marginTop: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <h3 style={{ margin: 0, fontSize: 14 }}>Em aberto neste mês</h3>
+                  <button type="button" onClick={() => setAba('receber')} style={linkBtn}>Ver todas</button>
+                </div>
+                {abertas.slice(0, 4).map((charge) => (
+                  <p key={charge.id} style={{ margin: '8px 0 0', color: '#475569', fontSize: 14 }}>
+                    {charge.clientName || charge.description} · {charge.kind === 'MENSALIDADE' ? 'Mensalidade' : 'A receber'} · falta R$ {money(charge.pending)}
+                  </p>
+                ))}
+              </div>
+            )}
             {erros.comissao && <p className="fin-aviso">{erros.comissao}</p>}
             {carregandoSecundario && !caixaHoje && <div className="fin-skeleton" style={{ margin: '14px 0' }} />}
             {erros.caixa && <p className="fin-aviso">{erros.caixa}</p>}

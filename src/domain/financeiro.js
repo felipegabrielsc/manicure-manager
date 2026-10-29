@@ -79,7 +79,7 @@ export function statusFinanceiro({ originalAmount, discountAmount = 0, payments 
 
 export function saldoDe(charge, payments = []) {
   const daCobranca = (payments || []).filter((payment) => payment.chargeId === charge.id)
-  if (charge.countsAsRevenue === false) {
+  if (charge.countsAsRevenue === false && charge.kind !== 'MENSALIDADE') {
     return {
       status: charge.cancelled ? 'CANCELADO' : 'PAGO',
       liquido: 0,
@@ -151,6 +151,65 @@ export function comissaoDevida({ historica, baseAmount, percentualAtual, staffId
   })
 }
 
+/** Visita de mensalidade ou “ainda não recebi” sem preço combinado usa o preço do serviço. */
+export function valorCobradoDaVisita(appointment) {
+  const agreed = roundMoney(appointment?.agreed_price)
+  const method = appointment?.payment_method || 'PENDENTE'
+  if (agreed > 0 || (method !== 'MENSALIDADE' && method !== 'PENDENTE')) return agreed
+  return roundMoney(appointment?.services?.default_price)
+}
+
+function visitasDaCobranca(row, agenda) {
+  if (row?.kind === 'ATENDIMENTO') {
+    return (agenda || []).filter((item) => String(item.id) === String(row.appointment_id) && item.status === 'CONCLUIDO')
+  }
+  if (row?.kind !== 'MENSALIDADE') return []
+  const mes = String(row.competence_date || row.competenceDate || '').slice(0, 7)
+  return (agenda || []).filter((item) => (
+    item.status === 'CONCLUIDO'
+    && item.payment_method === 'MENSALIDADE'
+    && String(item.client_id) === String(row.client_id || row.clientId)
+    && civilDate(item.start_time).slice(0, 7) === mes
+  ))
+}
+
+function liquidoGravado(payments, chargeId) {
+  let net = 0
+  for (const payment of payments || []) {
+    const id = payment.charge_id || payment.chargeId
+    if (chargeId && String(id) !== String(chargeId)) continue
+    const amount = roundMoney(payment.amount)
+    const tipo = payment.entry_type || payment.entryType
+    net = roundMoney(net + (tipo === 'ESTORNO' ? -amount : amount))
+  }
+  return net
+}
+
+/**
+ * Mensalidade e “ainda não recebi” ficam em aberto até entrar dinheiro.
+ * Não mexe em cobrança quitada de verdade nem em cancelamento manual.
+ */
+export function correcaoCobrancaAberta(row, agenda = [], payments = []) {
+  if (!row || row.cancelled_manually) return null
+  const visitas = visitasDaCobranca(row, agenda)
+  if (!visitas.length) return null
+  const metodo = visitas[0].payment_method || 'PENDENTE'
+  if (metodo !== 'MENSALIDADE' && metodo !== 'PENDENTE') return null
+  if (liquidoGravado(payments, row.id) > 0) return null
+
+  const fee = metodo === 'MENSALIDADE' && Number(visitas[0].clients?.monthly_fee) > 0
+    ? roundMoney(visitas[0].clients.monthly_fee)
+    : roundMoney(visitas.reduce((sum, item) => sum + valorCobradoDaVisita(item), 0))
+  const patch = {}
+  if (row.recognizes_revenue === false) patch.recognizes_revenue = true
+  if (row.cancelled_at || row.status === 'CANCELADO' || row.status === 'PAGO') {
+    patch.cancelled_at = null
+    patch.status = 'PENDENTE'
+  }
+  if (!(Number(row.original_amount) > 0) && fee > 0) patch.original_amount = fee
+  return Object.keys(patch).length ? patch : null
+}
+
 function ehMensalidade(transaction) {
   if (!transaction || transaction.type !== 'RECEITA') return false
   if (transaction.category === 'mensalidade') return true
@@ -189,7 +248,7 @@ export function derivarLivro({ appointments = [], transactions = [], clients = [
   for (const appointment of appointments) {
     if (appointment.status !== 'CONCLUIDO') continue
     const method = appointment.payment_method || 'PENDENTE'
-    const price = roundMoney(appointment.agreed_price)
+    const price = valorCobradoDaVisita(appointment)
     const when = civilDate(appointment.start_time)
     if (method === 'MENSALIDADE') {
       const parts = monthIndex(appointment.start_time)
@@ -290,7 +349,7 @@ export function derivarLivro({ appointments = [], transactions = [], clients = [
 
   for (const [key, group] of mensalGroups) {
     const client = group.client
-    const visitsTotal = roundMoney(group.visits.reduce((sum, visit) => sum + (Number(visit.agreed_price) || 0), 0))
+    const visitsTotal = roundMoney(group.visits.reduce((sum, visit) => sum + valorCobradoDaVisita(visit), 0))
     const fee = Number(client.monthly_fee) > 0 ? roundMoney(client.monthly_fee) : visitsTotal
     const due = monthlyDueDate(
       group.parts.year,

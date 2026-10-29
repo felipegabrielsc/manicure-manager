@@ -1,4 +1,13 @@
+import { hasFeature } from './entitlements.js'
 import { resolveWorkspaceId } from './workspace'
+
+/** Sem linha, ou com a chave desligada, a visita não entra no cartão. */
+export function deveContarVisita({ settings, profile, profileError = false } = {}) {
+  if (settings?.active !== true) return false
+  if (profileError) return true
+  if (!profile) return false
+  return hasFeature(profile, 'Fidelidade')
+}
 
 /** Soma uma visita no cartão de fidelidade. Não usa RPC (evita 400 no console). */
 export async function incrementLoyaltyVisit(supabase, clientId) {
@@ -11,7 +20,14 @@ export async function incrementLoyaltyVisit(supabase, clientId) {
     .select('active')
     .eq('user_id', ws)
     .maybeSingle()
-  if (settings?.active === false) return
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('is_admin, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(features)')
+    .eq('id', ws)
+    .maybeSingle()
+
+  if (!deveContarVisita({ settings, profile, profileError: !!profileError })) return
 
   const { data: client, error } = await supabase
     .from('clients')

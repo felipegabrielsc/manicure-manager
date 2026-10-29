@@ -34,7 +34,7 @@ RLS do workspace. A agenda pública não faz select de `clients`. Ela cria ou ac
 
 ## I. Erros
 
-Nome e WhatsApp são `required` no formulário. Falha de coluna nova aparece como erro do PostgREST.
+Nome é obrigatório. WhatsApp é obrigatório só com as mensagens automáticas ligadas (`clients.bot_messages_enabled`, migration `042`). Com a chave desligada, o telefone pode ficar vazio e a fila não recebe aviso daquela cliente. Falha de coluna nova aparece como erro do PostgREST.
 
 ## J. Testes
 

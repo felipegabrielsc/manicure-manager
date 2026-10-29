@@ -38,6 +38,8 @@ export default function Clientes() {
   const [modalAberto, setModalAberto] = useState(false)
   const [nomeCliente, setNomeCliente] = useState('')
   const [phoneCliente, setPhoneCliente] = useState('')
+  const [mensagensBot, setMensagensBot] = useState(true)
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false)
   const [idEdicao, setIdEdicao] = useState(null)
   const [tipoCliente, setTipoCliente] = useState('AVULSO')
   const [mensalidadeValor, setMensalidadeValor] = useState('')
@@ -201,11 +203,13 @@ export default function Clientes() {
 
   const salvarCliente = async (e) => {
     e.preventDefault()
-    if (!nomeCliente || !phoneCliente) return toast.error('Preencha os campos')
+    if (!nomeCliente) return toast.error('Informe o nome')
+    if (mensagensBot && !phoneCliente) return toast.error('Informe o WhatsApp ou desligue as mensagens automáticas')
     const user = (await supabase.auth.getUser()).data.user
     const dados = {
       name: nomeCliente,
-      phone: phoneCliente,
+      phone: phoneCliente || null,
+      bot_messages_enabled: mensagensBot,
       user_id: workspaceId(profile, user.id),
       type: tipoCliente,
     }
@@ -225,6 +229,22 @@ export default function Clientes() {
     } else {
         const res = await supabase.from('clients').insert(dados)
         error = res.error
+    }
+
+    if (error?.message?.includes('bot_messages_enabled')) {
+      const semBot = { ...dados }
+      delete semBot.bot_messages_enabled
+      const retry = idEdicao
+        ? await supabase.from('clients').update(semBot).eq('id', idEdicao)
+        : await supabase.from('clients').insert(semBot)
+      if (!retry.error) {
+        toast.success(mensagensBot ? 'Cliente salva!' : 'Cliente salva. Para desligar o bot, rode o SQL 042 no Supabase.')
+        setModalAberto(false)
+        limparForm()
+        carregarDados()
+        return
+      }
+      error = retry.error
     }
 
     if (error) {
@@ -277,7 +297,8 @@ export default function Clientes() {
       e.stopPropagation()
       setIdEdicao(c.id)
       setNomeCliente(c.name)
-      setPhoneCliente(c.phone)
+      setPhoneCliente(c.phone || '')
+      setMensagensBot(c.bot_messages_enabled !== false)
       setTipoCliente(c.type === 'MENSALISTA' ? 'MENSALISTA' : 'AVULSO')
       setMensalidadeValor(c.monthly_fee != null ? String(c.monthly_fee) : '')
       setDiaVencimento(String(c.monthly_due_day || 10))
@@ -291,6 +312,7 @@ export default function Clientes() {
     setIdEdicao(null)
     setNomeCliente('')
     setPhoneCliente('')
+    setMensagensBot(true)
     setTipoCliente('AVULSO')
     setMensalidadeValor('')
     setDiaVencimento('10')
@@ -344,7 +366,7 @@ export default function Clientes() {
   async function avisarSegmento() {
     const alvo = SEGMENTOS.find(s => s.id === segmento)
     if (!alvo) return
-    const grupo = filtrarLista.filter(c => c.phone)
+    const grupo = filtrarLista.filter(c => c.phone && c.bot_messages_enabled !== false)
     if (!grupo.length) return toast.error('Nenhuma cliente deste grupo tem WhatsApp.')
     setAvisando(true)
     const user = (await supabase.auth.getUser()).data.user
@@ -377,6 +399,13 @@ export default function Clientes() {
   const clientesPorNome = [...comSegmentos].sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
   const clienteDetalhe = comSegmentos.find(c => String(c.id) === String(clienteDetalheId))
   const segmentoAtivo = SEGMENTOS.find(s => s.id === segmento)
+  const rotulosFiltro = [
+    filtroPeriodo === 'TOTAL' ? 'Todo o histórico' : null,
+    filtroTipo === 'SERVICOS' ? 'Serviços' : filtroTipo === 'COMPRAS' ? 'Compras' : null,
+    filtroPagamento !== 'TODOS' ? filtroPagamento : null,
+    segmentoAtivo?.label || null,
+    clienteFocoId ? 'Uma cliente' : null,
+  ].filter(Boolean)
   const historicoDetalhe = clienteDetalhe ? itensFiltradosDe(clienteDetalhe.historico) : []
 
   const escolherClienteFoco = (id) => {
@@ -432,6 +461,14 @@ export default function Clientes() {
 
         {/* FILTROS (COM ID) */}
         <div id="cli-filtros" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+            <button
+              type="button"
+              onClick={() => setFiltrosAbertos(aberto => !aberto)}
+              style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'white', color: '#334155', fontWeight: 'bold', cursor: 'pointer', textAlign: 'left' }}
+            >
+              {filtrosAbertos ? 'Ocultar filtros' : 'Filtros'}{rotulosFiltro.length ? ` · ${rotulosFiltro.join(' · ')}` : ''}
+            </button>
+            {filtrosAbertos && <>
             <select
               value={clienteFocoId}
               onChange={e => escolherClienteFoco(e.target.value)}
@@ -495,9 +532,10 @@ export default function Clientes() {
                 style={{ width: '90px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}
               />
             </div>
+            </>}
             {segmentoAtivo && (
               <button type="button" onClick={avisarSegmento} disabled={avisando} style={{ padding: '10px 12px', borderRadius: '8px', border: 'none', background: '#16a34a', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>
-                {avisando ? 'Enfileirando...' : `Avisar ${segmentoAtivo.label.toLowerCase()} (${filtrarLista.filter(c => c.phone).length})`}
+                {avisando ? 'Enfileirando...' : `Avisar ${segmentoAtivo.label.toLowerCase()} (${filtrarLista.filter(c => c.phone && c.bot_messages_enabled !== false).length})`}
               </button>
             )}
         </div>
@@ -592,8 +630,14 @@ export default function Clientes() {
                          <input required value={nomeCliente} onChange={e=>setNomeCliente(e.target.value)} style={inputStyle} placeholder="Ex: Maria Silva" />
                      </div>
                      <div style={{marginBottom:'15px'}}>
-                         <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>WhatsApp</label>
-                         <input required value={phoneCliente} onChange={e => setPhoneCliente(formatarTelefone(e.target.value))} style={inputStyle} placeholder="(00) 00000-0000" maxLength={15}/>
+                         <label style={{display:'flex', gap:'8px', alignItems:'flex-start', fontSize:'14px', cursor:'pointer'}}>
+                           <input type="checkbox" checked={mensagensBot} onChange={e => setMensagensBot(e.target.checked)} style={{ marginTop: 3 }} />
+                           <span>Enviar mensagens automáticas no WhatsApp. Desligue para esta cliente não receber o bot. Sem as mensagens, o telefone deixa de ser obrigatório.</span>
+                         </label>
+                     </div>
+                     <div style={{marginBottom:'15px'}}>
+                         <label style={{display:'block', fontSize:'12px', fontWeight:'bold', marginBottom:'5px'}}>WhatsApp{mensagensBot ? '' : ' (opcional)'}</label>
+                         <input required={mensagensBot} value={phoneCliente} onChange={e => setPhoneCliente(formatarTelefone(e.target.value))} style={inputStyle} placeholder="(00) 00000-0000" maxLength={15}/>
                      </div>
                      {birthdayOk && (
                        <div style={{marginBottom:'15px'}}>
