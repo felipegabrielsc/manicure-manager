@@ -2,6 +2,8 @@
 
 Sistema de gestão para manicures: agenda, clientes, serviços, financeiro, agendamento público e painel admin.
 
+A documentação técnica, para quem desenvolve, está em [docs/README.md](docs/README.md). O guia visual de uso do salão, quando existir no branch, fica em `docs/manual-usuario/` e não substitui o contrato técnico.
+
 ## Requisitos
 
 - Node.js 18+
@@ -74,9 +76,11 @@ supabase/migrations/036_public_booking_rate_limit.sql
 supabase/migrations/037_admin_grants_e_rls.sql
 supabase/migrations/038_notification_claim.sql
 supabase/migrations/039_sinal_pix_e_inativas.sql
+supabase/migrations/040_financeiro_recebimentos.sql
+supabase/migrations/041_financeiro_indices.sql
 ```
 
-**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–036**, a **037**, a **038** e a **039**. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin. A **038** recupera mensagens presas em `sending` e trava a fila para dois workers não enviarem o mesmo item. A **039** liga o sinal PIX, a chave PIX no site e a janela de inativas (30/45/60). Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
+**Site novo:** rode **001–028**, depois **029_mp_billing**, **029_workspace**, **030–039**, a **040** e a **041**. A **040** cria cobrança, pagamento, comissão e auditoria. A **041** só cria índices. Não reescreva esses arquivos se já tiverem sido aplicados. **Site que já estava no ar:** se o pedido pelo link falhar, rode pelo menos **017, 020–023 e 026**. Para fotos no perfil e preços R$ 125 / R$ 150, rode a **027**. A **028** entra com planos anuais, capa/logo, confirmação automática, pacote de visitas, antes/depois e lembrete de retorno. A **029_mp** evita renovação duplicada no Mercado Pago. A **030** cria a fila de notificações. A **037** desativa o código mestre de admin. A **038** recupera mensagens presas em `sending` e trava a fila para dois workers não enviarem o mesmo item. A **039** liga o sinal PIX, a chave PIX no site e a janela de inativas (30/45/60). A **040** grava cobrança, pagamento, estorno e comissão. A **041** cria os índices do financeiro. Depois faça o deploy de `mp-webhook` e `push-dispatch`. O SQL **não** roda na Vercel — cole no **Supabase → SQL Editor**.
 
 Não commite `.env` nem `supabase/.temp/`.
 
@@ -88,7 +92,7 @@ Não commite `.env` nem `supabase/.temp/`.
 npm run dev
 ```
 
-O GitHub Actions (`.github/workflows/ci.yml`) roda `npm test` e `npm run build` em todo push e pull request (o lint ainda avisa, mas não bloqueia enquanto o código antigo não for limpo). Não reescreva migrations já aplicadas; correção nova vai em arquivo com o próximo número.
+O GitHub Actions (`.github/workflows/ci.yml`) roda `npm test` e `npm run build` em push na `main` e em pull request, com Node 20. O lint roda com `continue-on-error` e não bloqueia o check. Não reescreva migrations já aplicadas; correção nova vai em arquivo com o próximo número.
 
 **Homologação e backup:** publique o front na Vercel em preview; SQL só no SQL Editor de um projeto Supabase de teste. Backup: Dashboard → Database → Backups, ou `pg_dump` do connection string. Restaure só em projeto de teste. Não rode `supabase db reset` em produção.
 
@@ -151,7 +155,7 @@ Eventos de **pagamento**. Sem a função + token, o botão Assinar cai no link f
 
 O webhook **consulta a API oficial** (`GET /v1/payments/:id`) e só aplica o efeito financeiro uma vez por `mp_payment_id`. Notificação duplicada ou `pending` seguido de `approved` não gera duas assinaturas. Reembolso/`charged_back` cancela se aquele pagamento for o último ativo. Falha temporária da API responde **503** para o Mercado Pago tentar de novo. Rode a **029** e faça o deploy de `mp-webhook` de novo.
 
-**Trava de plano:** teste 14 dias (Agenda, Clientes, Serviços, Financeiro). Estoque, Fidelidade e Equipe exigem o plano **Pro**. Teste/assinatura vencidos mandam para `/planos`.
+**Trava de plano:** o teste de 14 dias está na migration `005`. No código, o plano sem lista de features libera Agenda, Clientes e Financeiro. Serviços não está em `FEATURE_BY_PATH`, então abre em qualquer assinatura ainda válida. Estoque, Fidelidade e Equipe só aparecem se o plano trouxer esses nomes. Teste ou assinatura vencidos mandam para `/planos`. Configurações e Planos continuam acessíveis para a dona.
 
 ## Admin da plataforma e isolamento (037)
 
