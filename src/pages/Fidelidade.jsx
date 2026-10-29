@@ -9,7 +9,7 @@ import { workspaceId } from '../utils/workspace'
 export default function Fidelidade() {
   const { profile } = useSessionProfile()
   const [userId, setUserId] = useState(null)
-  const [settings, setSettings] = useState({ visits_required: 10, reward_description: '1 serviço grátis', active: true })
+  const [settings, setSettings] = useState({ visits_required: 10, reward_description: '1 serviço grátis', active: false })
   const [cupons, setCupons] = useState([])
   const [clientesTop, setClientesTop] = useState([])
 
@@ -41,7 +41,7 @@ export default function Fidelidade() {
       user_id: userId,
       visits_required: parseInt(settings.visits_required, 10) || 10,
       reward_description: settings.reward_description,
-      active: settings.active,
+      active: settings.active === true,
       updated_at: new Date().toISOString(),
     })
     if (error) toast.error('Erro ao salvar. Execute a migration 002.')
@@ -108,8 +108,9 @@ export default function Fidelidade() {
           <label style={lbl}>Descrição do prêmio</label>
           <input value={settings.reward_description} onChange={e => setSettings({ ...settings, reward_description: e.target.value })} style={inp} />
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0', cursor: 'pointer' }}>
-            <input type="checkbox" checked={settings.active} onChange={e => setSettings({ ...settings, active: e.target.checked })} /> Programa ativo
+            <input type="checkbox" checked={settings.active === true} onChange={e => setSettings({ ...settings, active: e.target.checked })} /> Programa ativo
           </label>
+          <p style={{ margin: '0 0 12px', color: '#64748b', fontSize: 13 }}>Desligado até você salvar com esta opção. A visita só conta no plano que inclui fidelidade.</p>
           <button onClick={salvarPrograma} style={btn}>Salvar programa</button>
         </div>
 

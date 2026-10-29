@@ -86,6 +86,13 @@ function row({ appointment, type, when, title, body, whatsappText, status = 'pen
   }))
 }
 
+export function clienteAceitaMensagens(appointment) {
+  if (!appointment) return true
+  if (appointment.bot_messages_enabled === false) return false
+  if (appointment.clients?.bot_messages_enabled === false) return false
+  return true
+}
+
 export function planAppointmentNotifications({
   appointment,
   reminderHours = 24,
@@ -94,6 +101,7 @@ export function planAppointmentNotifications({
   now = new Date(),
   rescheduled = false,
 }) {
+  if (!clienteAceitaMensagens(appointment)) return []
   const start = new Date(appointment.start_time)
   const nome = appointment.clients?.name || 'Cliente'
   const hora = horaSp(start)

@@ -5,6 +5,7 @@ import {
   civilDate,
   comSaldos,
   comissaoDevida,
+  correcaoCobrancaAberta,
   derivarLivro,
   doWorkspace,
   estornarRecebimento,
@@ -200,6 +201,132 @@ describe('mensalidades', () => {
     expect(tarde.charges[0].competenceDate).toBe('2026-10-01')
     expect(comSaldos(tarde.charges, tarde.payments)[0].status).toBe('PAGO')
     expect(indicadoresFinanceiros({ ...tarde, from: '2026-11-01', to: '2026-11-30' }).recebimentos).toBe(250)
+  })
+
+  it('sem valor fixo soma o preço do serviço e fica a receber', () => {
+    const livro = derivarLivro({
+      appointments: [{
+        id: 3,
+        status: 'CONCLUIDO',
+        payment_method: 'MENSALIDADE',
+        agreed_price: 0,
+        start_time: '2026-10-10T15:00:00.000Z',
+        client_id: 7,
+        clients: { id: 7, name: 'Ana', type: 'MENSALISTA', monthly_due_day: 10, monthly_due_offset: 1 },
+        services: { name: 'Gel', default_price: 80 },
+      }],
+    })
+    const saldo = comSaldos(livro.charges, livro.payments)[0]
+    const ind = indicadoresFinanceiros({ ...livro, ...outubro })
+    expect(saldo.kind).toBe('MENSALIDADE')
+    expect(saldo.status).toBe('PENDENTE')
+    expect(saldo.liquido).toBe(80)
+    expect(saldo.pending).toBe(80)
+    expect(ind.faturamento).toBe(80)
+    expect(ind.recebimentos).toBe(0)
+    expect(ind.contasAReceber).toBe(80)
+  })
+
+  it('ainda não recebi usa o preço do serviço e não cancela a conta', () => {
+    const livro = derivarLivro({
+      appointments: [{
+        id: 4,
+        status: 'CONCLUIDO',
+        payment_method: 'PENDENTE',
+        agreed_price: 0,
+        start_time: '2026-10-10T15:00:00.000Z',
+        client_id: 8,
+        clients: { name: 'Lia' },
+        services: { name: 'Gel', default_price: 90 },
+      }],
+    })
+    const saldo = comSaldos(livro.charges, livro.payments)[0]
+    const ind = indicadoresFinanceiros({ ...livro, ...outubro })
+    expect(saldo.kind).toBe('ATENDIMENTO')
+    expect(saldo.status).toBe('PENDENTE')
+    expect(saldo.pending).toBe(90)
+    expect(ind.recebimentos).toBe(0)
+    expect(ind.contasAReceber).toBe(90)
+  })
+})
+
+describe('correção de cobrança aberta', () => {
+  const visita = {
+    id: 9,
+    status: 'CONCLUIDO',
+    payment_method: 'MENSALIDADE',
+    agreed_price: 0,
+    start_time: '2026-10-10T15:00:00.000Z',
+    client_id: 7,
+    clients: { monthly_fee: 0 },
+    services: { default_price: 80 },
+  }
+
+  it('reabre mensalidade marcada como paga sem dinheiro recebido', () => {
+    const patch = correcaoCobrancaAberta({
+      id: 'm1',
+      kind: 'MENSALIDADE',
+      status: 'PAGO',
+      original_amount: 0,
+      recognizes_revenue: false,
+      cancelled_at: null,
+      client_id: 7,
+      competence_date: '2026-10-01',
+    }, [visita], [])
+    expect(patch).toMatchObject({
+      status: 'PENDENTE',
+      recognizes_revenue: true,
+      original_amount: 80,
+      cancelled_at: null,
+    })
+  })
+
+  it('não mexe em mensalidade que já teve recebimento', () => {
+    const patch = correcaoCobrancaAberta({
+      id: 'm1',
+      kind: 'MENSALIDADE',
+      status: 'PAGO',
+      original_amount: 80,
+      recognizes_revenue: true,
+      client_id: 7,
+      competence_date: '2026-10-01',
+    }, [visita], [{ charge_id: 'm1', amount: 80, entry_type: 'RECEBIMENTO' }])
+    expect(patch).toBeNull()
+  })
+
+  it('desfaz cancelamento de ainda não recebi enquanto a visita segue concluída', () => {
+    const patch = correcaoCobrancaAberta({
+      id: 'a1',
+      kind: 'ATENDIMENTO',
+      appointment_id: 4,
+      status: 'CANCELADO',
+      cancelled_at: '2026-10-10T18:00:00.000Z',
+      original_amount: 90,
+      recognizes_revenue: false,
+      client_id: 8,
+    }, [{
+      id: 4,
+      status: 'CONCLUIDO',
+      payment_method: 'PENDENTE',
+      agreed_price: 90,
+      client_id: 8,
+    }], [])
+    expect(patch.status).toBe('PENDENTE')
+    expect(patch.cancelled_at).toBeNull()
+    expect(patch.recognizes_revenue).toBe(true)
+  })
+
+  it('não reabre cobrança cancelada pela dona', () => {
+    const patch = correcaoCobrancaAberta({
+      id: 'm1',
+      kind: 'MENSALIDADE',
+      status: 'CANCELADO',
+      cancelled_manually: true,
+      original_amount: 80,
+      client_id: 7,
+      competence_date: '2026-10-01',
+    }, [visita], [])
+    expect(patch).toBeNull()
   })
 })
 

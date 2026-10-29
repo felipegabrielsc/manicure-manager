@@ -177,7 +177,7 @@ export default function Agenda() {
     setLoading(true)
     const inicioDia = new Date(dataAtual); inicioDia.setHours(0, 0, 0, 0)
     const fimDia = new Date(dataAtual); fimDia.setHours(23, 59, 59, 999)
-    const { data } = await supabase.from('appointments').select(`*, clients (name, type, phone), services (name), staff_members (name)`).gte('start_time', inicioDia.toISOString()).lte('start_time', fimDia.toISOString()).order('start_time', { ascending: true })
+    const { data } = await supabase.from('appointments').select(`*, clients (name, type, phone, monthly_fee), services (name, default_price), staff_members (name)`).gte('start_time', inicioDia.toISOString()).lte('start_time', fimDia.toISOString()).order('start_time', { ascending: true })
     if (data) setAgendamentos(data)
     setLoading(false)
   }

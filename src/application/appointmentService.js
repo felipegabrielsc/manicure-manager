@@ -1,3 +1,5 @@
+import { invalidarFinanceiro } from './financeiroCache.js'
+import { sanarCobrancaDaConclusao } from './financeiroLoad.js'
 import { incrementLoyaltyVisit } from '../utils/loyalty'
 import {
   fetchSchedulingContext,
@@ -23,7 +25,8 @@ async function sincronizarConclusao(supabase, appointmentId) {
   const { error } = await supabase.rpc('sincronizar_conclusao_atendimento', {
     p_appointment_id: appointmentId,
   })
-  if (error && !rpcAusente(error)) return
+  if (!error || rpcAusente(error)) return { ok: true }
+  return { ok: false, error: error.message }
 }
 
 async function reverterConclusao(supabase, appointmentId) {
@@ -211,9 +214,13 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
   const { error } = await supabase.from('appointments').update(patch).eq('id', agendamento.id)
   if (error) return { ok: false, error: error.message }
 
+  const financeiro = await sincronizarConclusao(supabase, agendamento.id)
+  if (!financeiro.ok) return financeiro
+  await sanarCobrancaDaConclusao(supabase, agendamento, metodo)
+  if (agendamento.user_id) invalidarFinanceiro(agendamento.user_id)
+
   await incrementLoyaltyVisit(supabase, agendamento.client_id)
   await syncQuiet(supabase, { ...agendamento, status: 'CONCLUIDO' })
-  await sincronizarConclusao(supabase, agendamento.id)
 
   if (metodo === 'MENSALIDADE' && agendamento.client_id) {
     const { data: cli } = await supabase.from('clients').select('monthly_due_day, monthly_due_offset').eq('id', agendamento.client_id).single()
@@ -231,9 +238,6 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
 }
 
 export async function reabrirAtendimento(supabase, agendamento) {
-  const financeiro = await reverterConclusao(supabase, agendamento.id)
-  if (!financeiro.ok) return financeiro
-
   let packageUsed = null
   if (agendamento?.payment_method === 'PACOTE' && agendamento.client_id) {
     const { data: cli } = await supabase.from('clients').select('package_used').eq('id', agendamento.client_id).maybeSingle()
@@ -254,7 +258,21 @@ export async function reabrirAtendimento(supabase, agendamento) {
     }
     return { ok: false, error: error.message }
   }
+
+  const financeiro = await reverterConclusao(supabase, agendamento.id)
+  if (!financeiro.ok) {
+    await supabase.from('appointments').update({
+      status: 'CONCLUIDO',
+      payment_method: agendamento.payment_method || null,
+    }).eq('id', agendamento.id)
+    if (packageUsed > 0) {
+      await supabase.from('clients').update({ package_used: packageUsed }).eq('id', agendamento.client_id)
+    }
+    return financeiro
+  }
+
   await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO', payment_method: null })
+  if (agendamento.user_id) invalidarFinanceiro(agendamento.user_id)
   return { ok: true }
 }
 

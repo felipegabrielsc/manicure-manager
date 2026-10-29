@@ -1,5 +1,5 @@
 import { monthRangeLocal, toDateInputValue } from '../utils/dates.js'
-import { derivarLivro, indicadoresFinanceiros } from '../domain/financeiro.js'
+import { civilDate, correcaoCobrancaAberta, derivarLivro, indicadoresFinanceiros } from '../domain/financeiro.js'
 import {
   mapCharge,
   mapCommission,
@@ -11,12 +11,12 @@ import {
 export const LOTE_IDS = 80
 
 export const COLUNAS = {
-  agenda: 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, deposit_amount, deposit_status, discount_applied, staff_members(name, commission_percent), clients(id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services(name, duration_minutes)',
-  agendaSemSinal: 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, staff_members(name, commission_percent), clients(id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services(name, duration_minutes)',
-  agendaHoje: 'id, status, agreed_price, start_time, payment_method, staff_id, client_id, clients(name), services(name), staff_members(name, commission_percent)',
+  agenda: 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, deposit_amount, deposit_status, discount_applied, staff_members(name, commission_percent), clients(id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services(name, duration_minutes, default_price)',
+  agendaSemSinal: 'id, status, agreed_price, start_time, client_id, payment_method, staff_id, user_id, staff_members(name, commission_percent), clients(id, name, type, phone, monthly_fee, monthly_due_day, monthly_due_offset), services(name, duration_minutes, default_price)',
+  agendaHoje: 'id, status, agreed_price, start_time, payment_method, staff_id, client_id, clients(name), services(name, default_price), staff_members(name, commission_percent)',
   transacao: 'id, user_id, type, category, amount, date, description, commission_entry_id, payment_method, inventory_item_id, quantity, charge_id, payment_id, client_id',
   cliente: 'id, name, phone, type, monthly_fee, monthly_due_day, monthly_due_offset',
-  cobranca: 'id, user_id, kind, source_key, appointment_id, client_id, staff_id, service_name, description, competence_date, due_date, original_amount, discount_amount, recognizes_revenue, status, cancelled_at, visit_count, clients(name, phone), staff_members(name)',
+  cobranca: 'id, user_id, kind, source_key, appointment_id, client_id, staff_id, service_name, description, competence_date, due_date, original_amount, discount_amount, recognizes_revenue, status, cancelled_at, cancelled_manually, visit_count, clients(name, phone), staff_members(name)',
   pagamento: 'id, user_id, charge_id, amount, method, reference, entry_type, reversal_of, received_at, idempotency_key',
   comissao: 'id, user_id, appointment_id, staff_id, staff_name, percent_applied, base_amount, amount_due, status, recognized_at',
   auditoria: 'id, entity, action, created_at',
@@ -98,6 +98,42 @@ export function montarLivro({ temTabela, agenda, transacoes, clientes, cobrancas
     expenses: (transacoes || []).map(mapExpense).filter(Boolean),
     commissions: (comissoes || []).map(mapCommission),
   }
+}
+
+export async function sanarCobrancasAbertas(supabase, cobrancas, agenda, pagamentos) {
+  const correcoes = []
+  for (const row of cobrancas || []) {
+    const patch = correcaoCobrancaAberta(row, agenda, pagamentos)
+    if (patch) correcoes.push({ id: row.id, patch })
+  }
+  if (!correcoes.length) return cobrancas || []
+
+  const gravadas = await Promise.all(correcoes.map(async (item) => {
+    const { error } = await supabase.from('financial_charges').update(item.patch).eq('id', item.id)
+    return error ? null : item
+  }))
+  const porId = new Map(gravadas.filter(Boolean).map((item) => [item.id, item.patch]))
+  return (cobrancas || []).map((row) => (porId.has(row.id) ? { ...row, ...porId.get(row.id) } : row))
+}
+
+export async function sanarCobrancaDaConclusao(supabase, agendamento, metodo) {
+  if (!agendamento?.id || (metodo !== 'MENSALIDADE' && metodo !== 'PENDENTE')) return
+  const mes = civilDate(agendamento.start_time).slice(0, 7)
+  let consulta = supabase.from('financial_charges').select('id, kind, status, original_amount, recognizes_revenue, cancelled_at, cancelled_manually, client_id, appointment_id, competence_date')
+  consulta = metodo === 'MENSALIDADE'
+    ? consulta.eq('source_key', `mensalidade:${agendamento.client_id}:${mes}`)
+    : consulta.eq('appointment_id', agendamento.id)
+  const { data, error } = await consulta.maybeSingle()
+  if (error || !data) return
+  const pagamentos = await supabase.from('financial_payments').select('id, charge_id, amount, entry_type').eq('charge_id', data.id)
+  const visita = {
+    ...agendamento,
+    status: 'CONCLUIDO',
+    payment_method: metodo,
+  }
+  const patch = correcaoCobrancaAberta(data, [visita], pagamentos.data || [])
+  if (!patch) return
+  await supabase.from('financial_charges').update(patch).eq('id', data.id)
 }
 
 export async function buscarPrincipalFinanceiro(supabase, { dataAtual, temTabela, medidor = medidorMudo() }) {
@@ -220,6 +256,8 @@ export async function buscarPrincipalFinanceiro(supabase, { dataAtual, temTabela
     }
     cobrancas = uniqById([...cobrancas, ...extra.data])
   }
+
+  cobrancas = await sanarCobrancasAbertas(supabase, cobrancas, agenda, linhasPagamento)
 
   return {
     livro: montarLivro({

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   idempotencyKey,
   minuteInSaoPaulo,
+  clienteAceitaMensagens,
   planAppointmentNotifications,
   retryAfterFailure,
 } from './notificationPlan.js'
@@ -118,6 +119,15 @@ describe('notificationPlan', () => {
     expect(retorno.payload.text).toContain('21 dias')
     expect(minuteInSaoPaulo(retorno.scheduled_for)).toBe(minuteInSaoPaulo(new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000)))
     expect(rows.some((row) => row.type === 'client_return_reminder' && row.channel === 'push')).toBe(false)
+  })
+
+  it('cliente sem mensagens automáticas não entra na fila', () => {
+    expect(clienteAceitaMensagens(appointment)).toBe(true)
+    const rows = planAppointmentNotifications({
+      appointment: { ...appointment, clients: { ...appointment.clients, bot_messages_enabled: false } },
+      now,
+    })
+    expect(rows).toEqual([])
   })
 
   it('retry para em failed na quarta falha', () => {

@@ -329,6 +329,18 @@ describe('consultas do financeiro', () => {
     expect(painel.aPagar).toHaveLength(1)
     expect(painel.comissoesMes).toHaveLength(2)
     expect(painel.mensalidades[0].pending).toBe(150)
+    const cancelada = montarPainelFinanceiro({
+      livroBruto: {
+        ...livro,
+        charges: [
+          ...livro.charges,
+          { ...livro.charges[2], id: 'c4', cancelled: true, description: 'Mensalidade cancelada' },
+        ],
+      },
+      dataAtual: outubro,
+    })
+    expect(cancelada.mensalidades.map((item) => item.id)).toEqual(['c3'])
+    expect(cancelada.abertas.map((item) => item.id)).not.toContain('c4')
     const soPix = filtrarMovimentos(painel.movimentosTodos, { from: '2026-10-01', to: '2026-10-31', pagamento: 'PIX' })
     expect(soPix.every((item) => item.payment_method === 'PIX')).toBe(true)
     expect(painel.indicadores.recebimentos).toBe(200)

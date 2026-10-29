@@ -30,7 +30,7 @@ Se `financial_charges` não existe, o serviço marca a origem como derivada e `d
 
 ## E. Banco
 
-`transactions`, `financial_charges`, `financial_charge_items`, `financial_payments`, `commission_entries`, `financial_audit_log`, `financial_goals`. RPCs da `040`. Índices da `041`.
+`transactions`, `financial_charges`, `financial_charge_items`, `financial_payments`, `commission_entries`, `financial_audit_log`, `financial_goals`. RPCs da `040`, ajustadas na `042`. Índices da `041`. `sincronizar_financeiro_existente` só reaplica visita concluída que ainda não tem cobrança saudável.
 
 `COLUNAS.transacao` em `financeiroLoad.js` não inclui `staff_id`.
 
