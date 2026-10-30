@@ -278,6 +278,10 @@ export default function Clientes() {
       }
 
       setAcaoConfirmacao(() => async () => {
+          await supabase.from('financial_charges').update({
+            status: 'CANCELADO',
+            cancelled_at: new Date().toISOString(),
+          }).eq('client_id', id).eq('kind', 'MENSALIDADE').in('status', ['PENDENTE', 'PARCIAL'])
           const { error: deleteError } = await supabase.from('clients').delete().eq('id', id)
           if (deleteError) toast.error('Erro ao excluir.')
           else {

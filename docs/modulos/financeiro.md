@@ -36,7 +36,7 @@ Se `financial_charges` não existe, o serviço marca a origem como derivada e `d
 
 ## F. Regras
 
-Todas as fórmulas estão em [Regras de negócio](../05-regras-de-negocio.md). Status: `PENDENTE`, `PARCIAL`, `PAGO`, `ESTORNADO`, `CANCELADO`. Comissão nasce na conclusão. Resultado de caixa não é resultado operacional.
+Todas as fórmulas estão em [Regras de negócio](../05-regras-de-negocio.md). Status: `PENDENTE`, `PARCIAL`, `PAGO`, `ESTORNADO`, `CANCELADO`. Comissão nasce na conclusão. Resultado de caixa não é resultado operacional. Mensalidade de cliente excluída, sem recebimento, passa a `CANCELADO` e some da lista do mês.
 
 Abas: Visão geral, Movimentações, A receber, A pagar, Mensalidades, Comissões, Relatórios. A profissional não vê Relatórios, meta nem lançamento manual.
 

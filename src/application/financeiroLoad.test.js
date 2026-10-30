@@ -293,7 +293,7 @@ describe('consultas do financeiro', () => {
       cobrancas: [
         cobranca(),
         { ...cobranca('c2'), status: 'CANCELADO', original_amount: 80, description: 'Cancelada' },
-        { ...cobranca('c3'), kind: 'MENSALIDADE', original_amount: 250, status: 'PARCIAL', service_name: 'Mensalidade', description: 'Mensalidade — 10/2026' },
+        { ...cobranca('c3'), kind: 'MENSALIDADE', client_id: 7, original_amount: 250, status: 'PARCIAL', service_name: 'Mensalidade', description: 'Mensalidade — 10/2026' },
       ],
       pagamentos: [
         pagamento(),

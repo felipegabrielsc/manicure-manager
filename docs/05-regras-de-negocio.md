@@ -163,7 +163,7 @@ Caixa do dia na Agenda (`src/utils/salonReports.js`, métodos em `METODOS_CAIXA`
 3. Condições: `payment_method = MENSALIDADE` ou cliente `MENSALISTA`.
 4. Dados: `monthlyDueDate(ano, mês do serviço, dia, offset)` em `src/utils/dates.js`. Offset 1 é o mês seguinte. Dia 31 estoura para o último dia do mês alvo, conforme a função. Ler `dates.js` antes de mudar.
 5. Arquivos: `src/application/mensalidade.js`, aba Mensalidades do financeiro, `_aplicar_conclusao` para a cobrança `MENSALIDADE`.
-6. Valor: `monthly_fee` se for maior que zero. Senão, soma o preço da visita. Se `agreed_price` for 0, usa `services.default_price`. A cobrança fica `PENDENTE` até o recebimento. Não entra no caixa do dia. `PENDENTE` (“ainda não recebi”) é conta de atendimento em aberto, não cancelamento.
+6. Valor: `monthly_fee` se for maior que zero. Senão, soma o preço da visita. Se `agreed_price` for 0, usa `services.default_price`. A cobrança fica `PENDENTE` até o recebimento. Não entra no caixa do dia. `PENDENTE` (“ainda não recebi”) é conta de atendimento em aberto, não cancelamento. Cliente excluída encerra a mensalidade em aberto que não teve recebimento.
 7. Exceção: `ehPagamentoMensalidade` trata categoria `mensalidade` ou descrição que começa com “mensalidade”.
 8. Dependências: ficha da cliente.
 9. Testes: `mensalidade.test.js`.

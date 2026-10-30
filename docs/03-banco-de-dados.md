@@ -33,6 +33,7 @@ O README, na revisão anterior a este documento, parava na `039`. Também existe
 - `040_financeiro_recebimentos.sql` — cobranças, pagamentos, comissões, auditoria e RPCs.
 - `041_financeiro_indices.sql` — quatro índices. Não muda regra.
 - `042_fidelidade_mensagens_financeiro.sql` — fidelidade desligada por padrão, `clients.bot_messages_enabled`, e correção de mensalidade / “ainda não recebi”. Substitui funções da `035` e da `040`; não edita esses arquivos.
+- `043_mensalidade_cliente_excluida.sql` — cancela mensalidade sem cliente e sem recebimento.
 
 Migrations com o mesmo assunto reescrito várias vezes: `validar_horario_agendamento`, `marcar_horario_site`, `solicitar_horario_publico`, `criar_agendamento_publico`, `sync_appointment_notifications`, `enqueue_notification`. Vale a **última definição na ordem dos arquivos**, se todas tiverem sido aplicadas. A versão atual de `marcar_horario_site` está na `036`.
 
