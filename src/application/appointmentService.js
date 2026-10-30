@@ -216,25 +216,31 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
 
   const financeiro = await sincronizarConclusao(supabase, agendamento.id)
   if (!financeiro.ok) return financeiro
-  await sanarCobrancaDaConclusao(supabase, agendamento, metodo)
   if (agendamento.user_id) invalidarFinanceiro(agendamento.user_id)
+  void efeitosDaConclusao(supabase, agendamento, metodo)
 
-  await incrementLoyaltyVisit(supabase, agendamento.client_id)
-  await syncQuiet(supabase, { ...agendamento, status: 'CONCLUIDO' })
+  return { ok: true, avisoMensalidade: metodo === 'MENSALIDADE' && !!agendamento.client_id }
+}
 
-  if (metodo === 'MENSALIDADE' && agendamento.client_id) {
-    const { data: cli } = await supabase.from('clients').select('monthly_due_day, monthly_due_offset').eq('id', agendamento.client_id).single()
-    await supabase.from('clients').update({ type: 'MENSALISTA' }).eq('id', agendamento.client_id)
-    const extra = {}
-    if (cli?.monthly_due_day == null) extra.monthly_due_day = 10
-    if (cli?.monthly_due_offset == null) extra.monthly_due_offset = 1
-    if (Object.keys(extra).length) {
-      await supabase.from('clients').update(extra).eq('id', agendamento.client_id)
-    }
-    return { ok: true, avisoMensalidade: true }
+async function efeitosDaConclusao(supabase, agendamento, metodo) {
+  await Promise.allSettled([
+    sanarCobrancaDaConclusao(supabase, agendamento, metodo),
+    incrementLoyaltyVisit(supabase, agendamento.client_id),
+    syncQuiet(supabase, { ...agendamento, status: 'CONCLUIDO' }),
+    marcarClienteMensalista(supabase, agendamento, metodo),
+  ])
+}
+
+async function marcarClienteMensalista(supabase, agendamento, metodo) {
+  if (metodo !== 'MENSALIDADE' || !agendamento.client_id) return
+  const { data: cli } = await supabase.from('clients').select('monthly_due_day, monthly_due_offset').eq('id', agendamento.client_id).single()
+  await supabase.from('clients').update({ type: 'MENSALISTA' }).eq('id', agendamento.client_id)
+  const extra = {}
+  if (cli?.monthly_due_day == null) extra.monthly_due_day = 10
+  if (cli?.monthly_due_offset == null) extra.monthly_due_offset = 1
+  if (Object.keys(extra).length) {
+    await supabase.from('clients').update(extra).eq('id', agendamento.client_id)
   }
-
-  return { ok: true }
 }
 
 export async function reabrirAtendimento(supabase, agendamento) {
@@ -271,8 +277,8 @@ export async function reabrirAtendimento(supabase, agendamento) {
     return financeiro
   }
 
-  await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO', payment_method: null })
   if (agendamento.user_id) invalidarFinanceiro(agendamento.user_id)
+  void syncQuiet(supabase, { ...agendamento, status: 'AGENDADO', payment_method: null })
   return { ok: true }
 }
 

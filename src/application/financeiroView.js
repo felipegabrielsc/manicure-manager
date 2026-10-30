@@ -82,6 +82,7 @@ export function montarPainelFinanceiro({
   const abertas = saldos.filter((charge) => charge.pending > 0 && charge.countsAsRevenue !== false)
   const mensalidades = saldos.filter((charge) => (
     charge.kind === 'MENSALIDADE'
+    && charge.clientId
     && charge.status !== 'CANCELADO'
     && (noMes(charge.competenceDate, periodo.startDay, periodo.endDay) || noMes(charge.dueDate, periodo.startDay, periodo.endDay))
   ))

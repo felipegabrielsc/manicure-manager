@@ -173,6 +173,14 @@ function visitasDaCobranca(row, agenda) {
   ))
 }
 
+export function patchMensalidadeSemCliente(row, payments = []) {
+  if (!row || row.kind !== 'MENSALIDADE') return null
+  if (row.client_id || row.clientId) return null
+  if (row.cancelled_manually || row.cancelled_at || row.status === 'CANCELADO') return null
+  if (liquidoGravado(payments, row.id) > 0) return null
+  return { status: 'CANCELADO', cancelled_at: new Date().toISOString() }
+}
+
 function liquidoGravado(payments, chargeId) {
   let net = 0
   for (const payment of payments || []) {
@@ -525,6 +533,7 @@ function despesaOperacional(expense) {
 export function indicadoresFinanceiros({ charges = [], payments = [], expenses = [], commissions = [], from, to }) {
   let faturamento = 0
   for (const charge of charges) {
+    if (charge.kind === 'MENSALIDADE' && !charge.clientId) continue
     if (charge.cancelled || charge.countsAsRevenue === false) continue
     if (!noPeriodo(charge.competenceDate, from, to)) continue
     faturamento = roundMoney(faturamento + (Number(charge.originalAmount) || 0) - (Number(charge.discountAmount) || 0))
@@ -545,6 +554,7 @@ export function indicadoresFinanceiros({ charges = [], payments = [], expenses =
 
   let contasAReceber = 0
   for (const charge of comSaldos(charges, payments)) {
+    if (charge.kind === 'MENSALIDADE' && !charge.clientId) continue
     if (charge.countsAsRevenue === false || charge.pending <= 0) continue
     const noMes = noPeriodo(charge.competenceDate, from, to) || noPeriodo(charge.dueDate, from, to)
     if (!noMes) continue

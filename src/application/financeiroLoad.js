@@ -1,5 +1,5 @@
 import { monthRangeLocal, toDateInputValue } from '../utils/dates.js'
-import { civilDate, correcaoCobrancaAberta, derivarLivro, indicadoresFinanceiros } from '../domain/financeiro.js'
+import { civilDate, correcaoCobrancaAberta, derivarLivro, indicadoresFinanceiros, patchMensalidadeSemCliente } from '../domain/financeiro.js'
 import {
   mapCharge,
   mapCommission,
@@ -103,7 +103,7 @@ export function montarLivro({ temTabela, agenda, transacoes, clientes, cobrancas
 export async function sanarCobrancasAbertas(supabase, cobrancas, agenda, pagamentos) {
   const correcoes = []
   for (const row of cobrancas || []) {
-    const patch = correcaoCobrancaAberta(row, agenda, pagamentos)
+    const patch = correcaoCobrancaAberta(row, agenda, pagamentos) || patchMensalidadeSemCliente(row, pagamentos)
     if (patch) correcoes.push({ id: row.id, patch })
   }
   if (!correcoes.length) return cobrancas || []

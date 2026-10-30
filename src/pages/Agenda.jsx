@@ -1,5 +1,5 @@
 // src/pages/Agenda.jsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../supabaseClient'
 import { ChevronLeft, ChevronRight, Calendar, Plus, CheckSquare, Square, MessageCircle, Trash2, Clock, X, HelpCircle, AlertTriangle, CheckCircle, Ban, Bell, LayoutGrid } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -182,7 +182,10 @@ export default function Agenda() {
     setLoading(false)
   }
 
+  const gravandoHorario = useRef(new Set())
+
   const handleToggleClick = (agendamento) => {
+    if (gravandoHorario.current.has(agendamento.id)) return
     if (agendamento.status === 'FALTOU' || agendamento.status === 'CANCELADO') return
     if (agendamento.status === 'CONCLUIDO') {
       reabrir(agendamento)
@@ -194,10 +197,13 @@ export default function Agenda() {
 
   const confirmarPagamento = async (metodo) => {
     const apt = agendamentos.find(a => a.id === idParaConcluir)
-    if (!apt) return
-    const result = await concluirAtendimento(supabase, { agendamento: apt, metodo })
-    if (!result.ok) return toast.error(result.error)
-    if (result.avisoMensalidade) {
+    if (!apt || gravandoHorario.current.has(apt.id)) return
+    gravandoHorario.current.add(apt.id)
+    const anterior = { status: apt.status, payment_method: apt.payment_method }
+    setAgendamentos(prev => prev.map(item => item.id === apt.id ? { ...item, status: 'CONCLUIDO', payment_method: metodo } : item))
+    setPagamentoModalOpen(false)
+    setIdParaConcluir(null)
+    if (metodo === 'MENSALIDADE') {
       toast('Essa visita vai para a mensalidade. Cobra no vencimento (padrão: dia 10 do mês seguinte).', { icon: '📅' })
     } else if (metodo === 'PENDENTE') {
       toast.success('Concluído. O valor ficou a receber.')
@@ -206,18 +212,28 @@ export default function Agenda() {
     } else {
       toast.success('Recebido!', { icon: '💰' })
     }
-    setAgendamentos(prev => prev.map(item => item.id === apt.id ? { ...item, status: 'CONCLUIDO', payment_method: metodo } : item))
-    setPagamentoModalOpen(false)
-    setIdParaConcluir(null)
     setAptRetorno({ ...apt, payment_method: metodo })
     setRetornoAberto(true)
+    const result = await concluirAtendimento(supabase, { agendamento: apt, metodo })
+    gravandoHorario.current.delete(apt.id)
+    if (!result.ok) {
+      toast.error(result.error)
+      setAgendamentos(prev => prev.map(item => item.id === apt.id ? { ...item, ...anterior } : item))
+    }
   }
 
   async function reabrir(agendamento) {
-    const result = await reabrirAtendimento(supabase, agendamento)
-    if (!result.ok) return toast.error(result.error)
+    if (gravandoHorario.current.has(agendamento.id)) return
+    gravandoHorario.current.add(agendamento.id)
+    const anterior = { status: agendamento.status, payment_method: agendamento.payment_method }
     setAgendamentos(prev => prev.map(item => item.id === agendamento.id ? { ...item, status: 'AGENDADO', payment_method: null } : item))
     toast('Reaberto', { icon: '↩️' })
+    const result = await reabrirAtendimento(supabase, agendamento)
+    gravandoHorario.current.delete(agendamento.id)
+    if (!result.ok) {
+      toast.error(result.error)
+      setAgendamentos(prev => prev.map(item => item.id === agendamento.id ? { ...item, ...anterior } : item))
+    }
   }
 
   const abrirOpcoes = (agendamento) => {

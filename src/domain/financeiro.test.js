@@ -4,6 +4,7 @@ import {
   cancelarCobranca,
   civilDate,
   comSaldos,
+  patchMensalidadeSemCliente,
   comissaoDevida,
   correcaoCobrancaAberta,
   derivarLivro,
@@ -314,6 +315,25 @@ describe('correção de cobrança aberta', () => {
     expect(patch.status).toBe('PENDENTE')
     expect(patch.cancelled_at).toBeNull()
     expect(patch.recognizes_revenue).toBe(true)
+  })
+
+  it('cancela mensalidade que ficou sem cliente e sem dinheiro', () => {
+    const patch = patchMensalidadeSemCliente({
+      id: 'm-orfa',
+      kind: 'MENSALIDADE',
+      status: 'PENDENTE',
+      client_id: null,
+      original_amount: 80,
+    }, [])
+    expect(patch.status).toBe('CANCELADO')
+    const comDinheiro = patchMensalidadeSemCliente({
+      id: 'm-paga',
+      kind: 'MENSALIDADE',
+      status: 'PAGO',
+      client_id: null,
+      original_amount: 80,
+    }, [{ charge_id: 'm-paga', amount: 80, entry_type: 'RECEBIMENTO' }])
+    expect(comDinheiro).toBeNull()
   })
 
   it('não reabre cobrança cancelada pela dona', () => {
