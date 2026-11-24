@@ -8,8 +8,7 @@ import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import Modal from '../components/Modal'
 import { monthRangeLocal, money } from '../utils/dates'
-import { driver } from "driver.js";
-import "driver.js/dist/driver.css";
+import { startTour } from '../utils/tour'
 import { useSessionProfile } from '../context/SessionProfile'
 import { workspaceId } from '../utils/workspace'
 import { enqueueMany } from '../application/notificationService'
@@ -66,37 +65,14 @@ export default function Clientes() {
     carregarDados()
   }, [filtroPeriodo])
 
-  // --- 2. CONFIGURAÇÃO DO TUTORIAL INTERATIVO ---
   const iniciarTutorial = () => {
-    const driverObj = driver({
-      showProgress: true,
-      nextBtnText: 'Próximo',
-      prevBtnText: 'Anterior',
-      doneBtnText: 'Entendi!',
-      steps: [
-        { 
-          element: '#cli-novo', 
-          popover: { title: 'Nova Cliente', description: 'Clique aqui para cadastrar uma nova cliente manualmente.' } 
-        },
-        { 
-          element: '#cli-busca', 
-          popover: { title: 'Pesquisa', description: 'Digite o nome para encontrar alguém rapidamente.' } 
-        },
-        { 
-          element: '#cli-filtros', 
-          popover: { title: 'Filtros', description: 'Escolha uma cliente, veja só os serviços ou só as compras, e filtre por PIX, cartão, dinheiro ou mensalidade.' } 
-        },
-        { 
-          element: '#cli-lista', 
-          popover: { title: 'Lista Inteligente', description: 'As clientes são ordenadas pelo valor gasto. Quem gasta mais aparece no topo (em verde).' } 
-        },
-        { 
-          element: '#cli-detalhes', 
-          popover: { title: 'Histórico', description: 'Abra a cliente para o extrato. Lá dá para ver todos os serviços ou só o que ela pagou no PIX.' } 
-        }
-      ]
-    });
-    driverObj.drive();
+    startTour([
+      { element: '#cli-novo', popover: { title: 'Nova Cliente', description: 'Clique aqui para cadastrar uma nova cliente manualmente.' } },
+      { element: '#cli-busca', popover: { title: 'Pesquisa', description: 'Digite o nome para encontrar alguém rapidamente.' } },
+      { element: '#cli-filtros', popover: { title: 'Filtros', description: 'Escolha uma cliente, veja só os serviços ou só as compras, e filtre por PIX, cartão, dinheiro ou mensalidade.' } },
+      { element: '#cli-lista', popover: { title: 'Lista Inteligente', description: 'As clientes são ordenadas pelo valor gasto. Quem gasta mais aparece no topo (em verde).' } },
+      { element: '#cli-detalhes', popover: { title: 'Histórico', description: 'Abra a cliente para o extrato. Lá dá para ver todos os serviços ou só o que ela pagou no PIX.' } },
+    ])
   }
 
   const formatarTelefone = (value) => {

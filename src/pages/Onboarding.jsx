@@ -41,12 +41,15 @@ export default function Onboarding() {
     }
 
     const ws = workspaceId(profile, user.id)
-    await supabase.from('profiles').update({
+
+    const { error: perfilErr } = await supabase.from('profiles').update({
       business_name: nome.trim(),
       whatsapp: whatsapp.replace(/\D/g, ''),
-      booking_active: true,
-      onboarding_done: true,
     }).eq('id', user.id)
+    if (perfilErr) {
+      setSaving(false)
+      return toast.error(perfilErr.message || 'Não foi possível salvar o perfil.')
+    }
 
     const rows = []
     for (let d = 0; d < 7; d++) {
@@ -59,17 +62,42 @@ export default function Onboarding() {
         is_closed: fechado,
       })
     }
-    await supabase.from('business_hours').delete().eq('user_id', ws)
-    await supabase.from('business_hours').insert(rows)
+    const { error: delErr } = await supabase.from('business_hours').delete().eq('user_id', ws)
+    if (delErr) {
+      setSaving(false)
+      return toast.error(delErr.message || 'Não foi possível limpar o expediente.')
+    }
+    const { error: horasErr } = await supabase.from('business_hours').insert(rows)
+    if (horasErr) {
+      setSaving(false)
+      return toast.error(horasErr.message || 'Não foi possível salvar o expediente.')
+    }
 
-    const { count } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('user_id', ws)
+    const { count, error: countErr } = await supabase.from('services').select('*', { count: 'exact', head: true }).eq('user_id', ws)
+    if (countErr) {
+      setSaving(false)
+      return toast.error(countErr.message || 'Não foi possível ler os serviços.')
+    }
     if (!count) {
-      await supabase.from('services').insert({
+      const { error: servErr } = await supabase.from('services').insert({
         user_id: ws,
         name: servico.trim() || 'Pé e mão',
         default_price: parseFloat(String(preco).replace(',', '.')) || 50,
         duration_minutes: 60,
       })
+      if (servErr) {
+        setSaving(false)
+        return toast.error(servErr.message || 'Não foi possível salvar o serviço.')
+      }
+    }
+
+    const { error: doneErr } = await supabase.from('profiles').update({
+      booking_active: true,
+      onboarding_done: true,
+    }).eq('id', user.id)
+    if (doneErr) {
+      setSaving(false)
+      return toast.error(doneErr.message || 'Não foi possível concluir o onboarding.')
     }
 
     await refreshProfile()

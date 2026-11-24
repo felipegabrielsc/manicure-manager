@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, BarChart3, Calendar, Download, FileText, HelpCircle, MessageCircle, Package, PlusCircle, Printer, Target, Trash2, TrendingDown, Wallet } from 'lucide-react'
-import { driver } from 'driver.js'
-import 'driver.js/dist/driver.css'
+import { startTour } from '../utils/tour'
 import toast from 'react-hot-toast'
 import { supabase } from '../supabaseClient'
 import Modal from '../components/Modal'
@@ -108,18 +107,12 @@ export default function Financeiro() {
   }, [dataAtual, profile?.workspace_id])
 
   const iniciarTutorial = () => {
-    driver({
-      showProgress: true,
-      nextBtnText: 'Próximo',
-      prevBtnText: 'Anterior',
-      doneBtnText: 'Entendi!',
-      steps: [
-        { element: '#fin-nav', popover: { title: 'Mês', description: 'Troque o mês para ver a competência e o caixa daquele período.' } },
-        { element: '#fin-abas', popover: { title: 'Painel', description: 'Visão geral, recebimentos, contas, mensalidades, comissões e relatórios.' } },
-        { element: '#fin-novo', popover: { title: 'Lançamento', description: 'Despesa, receita extra ou venda de produto. Recebimento de cobrança fica na conta.' } },
-        { element: '#fin-filtros', popover: { title: 'Filtros', description: 'Profissional e serviço atualizam os números. A forma de pagamento filtra a lista.' } },
-      ],
-    }).drive()
+    startTour([
+      { element: '#fin-nav', popover: { title: 'Mês', description: 'Troque o mês para ver a competência e o caixa daquele período.' } },
+      { element: '#fin-abas', popover: { title: 'Painel', description: 'Visão geral, recebimentos, contas, mensalidades, comissões e relatórios.' } },
+      { element: '#fin-novo', popover: { title: 'Lançamento', description: 'Despesa, receita extra ou venda de produto. Recebimento de cobrança fica na conta.' } },
+      { element: '#fin-filtros', popover: { title: 'Filtros', description: 'Profissional e serviço atualizam os números. A forma de pagamento filtra a lista.' } },
+    ])
   }
 
   useEffect(() => {

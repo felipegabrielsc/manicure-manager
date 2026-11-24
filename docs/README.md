@@ -48,4 +48,4 @@ Executado em 29 de outubro de 2026, na working tree do commit `4f7498e` mais est
 - Banco de produção, cron, webhooks e o painel da Vercel: não acessados.
 - Nenhum secret foi escrito nos capítulos. Nomes de variáveis vêm do código e de `.env.example`.
 
-Pendências que continuam abertas: schema original das tabelas anteriores à `001`, conteúdo de `schema_migrations` no projeto hospedado, presença da policy `"blocked_slots_public_read"`, e se as duas migrations `029` foram as duas aplicadas.
+Pendências que continuam abertas: schema original das tabelas anteriores à `001`, conteúdo de `schema_migrations` no projeto hospedado (incluindo as duas `029` e a `043`), e se a policy `"blocked_slots_public_read"` já foi dropada no banco (a `043` faz o DROP no repositório).

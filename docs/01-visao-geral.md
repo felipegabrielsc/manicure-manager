@@ -106,4 +106,4 @@ Agenda, Novo Agendamento, Login, Landing e as páginas públicas são import est
 
 `README.md` descreve operação e está útil, mas a lista de SQL parava na `039`. `040_financeiro_recebimentos.sql` e `041_financeiro_indices.sql` existem. O README também diz que o CI roda em todo push. O arquivo `.github/workflows/ci.yml` dispara em push na `main` e em pull request.
 
-`docs/plano-de-acao.md` é um plano antigo. Não descreve o código atual e não deve ser usado como especificação.
+`docs/arquivo/plano-de-acao.md` é um plano antigo arquivado. Não descreve o código atual e não deve ser usado como especificação.

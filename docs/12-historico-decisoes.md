@@ -95,3 +95,22 @@ Referência: commit `4f7498e`. A justificativa só entra quando o código, o com
 
 - Decisão desta documentação: `docs/manual-usuario/` continua sendo o guia visual. `docs/01` em diante é a fonte técnica.
 - Justificativa: o pedido de não misturar os dois públicos. O manual visual tem capturas pendentes e não descreve SQL.
+
+## Plano Pro só na navegação
+
+- Decisão: `PlanGate` / `entitlements.js` escondem módulos; o Postgres não revalida `subscription_plans.features`.
+- Onde: `docs/04`, `docs/09`, `src/utils/entitlements.js`.
+- Justificativa: enforcement por feature no RLS exigiria redesenhar entitlements em toda tabela paga.
+- Consequência: JWT do workspace ainda lê estoque/fidelidade/equipe se a policy do salão permitir.
+
+## Isolamento financeiro da profissional (043)
+
+- Decisão: RLS espelha `filtrarVisaoFinanceira` — staff só SELECT das próprias cobranças/comissões; despesas e audit só da dona.
+- Onde: `043_audit_isolamento_e_cupom.sql`, `current_staff_member_id()`.
+- Consequência: cobranças com `staff_id` nulo ficam só para a dona.
+
+## Conclusão avisa se a 040 faltar; erro real reverte
+
+- Decisão: RPC ausente de sync não bloqueia a conclusão, mas devolve `avisoFinanceiro`. Erro real reverte status e pacote.
+- Onde: `src/application/appointmentService.js`.
+- Consequência: `derivarLivro` continua como fallback de leitura; a verdade persistida exige a `040` aplicada.

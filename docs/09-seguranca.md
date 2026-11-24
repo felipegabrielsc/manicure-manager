@@ -44,11 +44,11 @@ Formulários usam `required` e checagens pontuais (senha, WhatsApp com 10 dígit
 
 ## Riscos encontrados no código
 
-1. **Policy pública de bloqueio.** `001` cria `"blocked_slots_public_read"` com `USING (true)`. Nenhuma migration posterior remove essa policy. Se ela estiver no banco, qualquer papel que passe no RLS lê todos os bloqueios, inclusive o motivo. A agenda pública atual não precisa desse select.
+1. **Policy pública de bloqueio.** Mitigado na `043` (`DROP POLICY`). Confirmar aplicação no banco hospedado.
 
-2. **Plano só no frontend.** Estoque, fidelidade e equipe continuam legíveis pelo JWT do workspace quando o plano não inclui o módulo.
+2. **Plano só no frontend.** Decisão consciente: Estoque, fidelidade e equipe continuam legíveis pelo JWT do workspace quando o plano não inclui o módulo. O menu não é barreira de dados. Revalidar `features` no Postgres exigiria redesenho de entitlements.
 
-3. **Profissional vê o financeiro do salão na API.** A tela filtra. A policy não filtra por `staff_id`.
+3. **Profissional e financeiro.** Mitigado na `043`: SELECT de cobranças/comissões só do próprio `staff_id`; despesas e audit log só da dona. Writes de lançamento manual só da dona. RPCs `SECURITY DEFINER` de conclusão/recebimento continuam no servidor.
 
 4. **Chave anon no bundle.** Esperado. Service role no bundle não é esperado e não foi encontrada em `VITE_`.
 
@@ -56,23 +56,19 @@ Formulários usam `required` e checagens pontuais (senha, WhatsApp com 10 dígit
 
 6. **`verify_jwt = false`** em webhook, cron e WhatsApp. O controle está no código da função. Um deploy que apague a checagem do secret abre o endpoint.
 
-7. **Cupom incrementado fora de transação** com o insert do horário. Não é vazamento, é consistência.
+7. **Cupom.** Mitigado com `consumir_cupom` na `043` (consumo antes do insert no painel quando a RPC existe).
 
-8. **Onboarding não confere erro** dos writes. Pode marcar `onboarding_done` e falhar o expediente.
+8. **Onboarding.** Mitigado no front: erros de write interrompem e `onboarding_done` só depois do expediente.
 
 9. **PIX em texto** na página pública. A chave não é senha, mas é dado de cobrança da manicure.
 
-10. **Dois arquivos `029`.** Se um não rodou, a idempotência do Mercado Pago ou a policy de portfólio pode faltar.
+10. **Dois arquivos `029`.** Se um não rodou, a idempotência do Mercado Pago ou a policy de portfólio pode faltar. Checklist de operação, não recriado na `043`.
 
 ## Recomendações futuras
 
-Não foram implementadas nesta tarefa.
-
-- Dropar `"blocked_slots_public_read"` numa migration nova, depois de confirmar que a agenda pública usa só RPC.
-- Não tratar o menu como barreira de dados.
 - Manter secrets fora de `VITE_` e fora do git. `supabase/.temp/` não deve ser commitado.
 - Antes de uma RPC `SECURITY DEFINER`, escrever o teste do caso “usuário do salão A não altera o salão B”, nem que seja revisão manual do `WHERE`.
-- Registro de pedido de exclusão de dados, se o produto precisar atender a titular. Hoje só existe exportação.
+- Purge real após `profiles.deletion_requested_at` (hoje só o pedido).
 
 ## O que não foi verificado
 
