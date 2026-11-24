@@ -30,7 +30,7 @@ RPC ausente (`PGRST202` ou schema cache) é tratada como opcional em vários pon
 
 ## Monitoramento e log
 
-Não há Sentry, Datadog nem OpenTelemetry no `package.json`.
+Sentry no browser é opcional: se `VITE_SENTRY_DSN` existir, `src/main.jsx` chama `Sentry.init`. Sem a variável, nada é enviado. Não há Datadog nem OpenTelemetry.
 
 O que existe:
 
@@ -39,6 +39,7 @@ O que existe:
 - Edge Functions usam `console.error` com JSON em `logSafe` no webhook, sem o token.
 - `notification_attempts` e `admin_fila_saude` para a fila.
 - `financial_audit_log` para dinheiro.
+- Pedido LGPD: `profiles.deletion_requested_at` (migration `043`).
 
 ## Falha e recuperação
 
@@ -49,7 +50,8 @@ O que existe:
 | Gateway WhatsApp fora | Item `pending` / `no_connection`. Agenda abre |
 | Mercado Pago API fora | Webhook responde 503 |
 | Item `sending` parado | Volta a `pending` depois de `STUCK_SENDING_MS` |
-| Função de conclusão ausente | Status do horário muda mesmo assim |
+| Função de conclusão ausente | Status muda; toast pede o SQL 040 (`avisoFinanceiro`) |
+| Erro real na sync de conclusão | Status e pacote revertem; toast de erro |
 
 Não há retry genérico de escrita do browser.
 

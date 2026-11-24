@@ -144,6 +144,7 @@ export default function NovoAgendamento() {
       toast.error(result.error || 'Erro ao agendar')
     } else {
       toast.success('Agendamento realizado!')
+      if (result.avisoCupom) toast(result.avisoCupom, { icon: '⚠️' })
       navigate('/')
     }
   }

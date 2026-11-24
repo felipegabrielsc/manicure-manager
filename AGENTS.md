@@ -11,7 +11,7 @@ Commit de referência da documentação: `4f7498e`. Se o `HEAD` for outro, leia 
 3. Identifique a regra em `docs/05-regras-de-negocio.md`. Comissão, status de cobrança, mensalidade, conflito de horário e plano são as que mais quebram em silêncio.
 4. Veja a coluna Dependências do módulo. Conclusão de agenda mexe em financeiro, fidelidade e fila.
 5. Preserve o isolamento. `user_id` de dado de salão é o workspace da dona, não o auth id da profissional. Não crie policy com `USING (true)` em tabela de cliente, financeiro ou agendamento.
-6. Não edite migration já aplicada. SQL novo é o próximo número livre depois de `041`. Não crie outro arquivo `029`.
+6. Não edite migration já aplicada. SQL novo é o próximo número livre depois de `042` (a `043` já existe neste repositório se estiver aplicada; o próximo livre segue o maior número em `supabase/migrations/`). Não crie outro arquivo `029`.
 7. Não coloque service role, token do Mercado Pago, VAPID privada, `CRON_SECRET` ou chave do WhatsApp em variável `VITE_` nem em markdown.
 8. Não peça a coluna `staff_id` em `transactions`.
 9. Mudança de comportamento pede teste em `*.test.js` ao lado da função. `npm test` e `npm run build` antes de encerrar. O lint não bloqueia o CI. Ainda assim, não deixe erro novo no arquivo que você tocou.
@@ -35,7 +35,7 @@ Commit de referência da documentação: `4f7498e`. Se o `HEAD` for outro, leia 
 | “Isso é bug?” | `docs/11-problemas-conhecidos.md` | o arquivo citado no item |
 | “Por que está assim?” | `docs/12-historico-decisoes.md` | o comentário no código |
 
-`docs/plano-de-acao.md` não é especificação. `docs/manual-usuario/` é o guia da manicure, não o contrato técnico.
+`docs/arquivo/plano-de-acao.md` é histórico, não especificação. `docs/manual-usuario/` é o guia da manicure, não o contrato técnico.
 
 ## Verificação mínima
 

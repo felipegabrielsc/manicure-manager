@@ -16,7 +16,9 @@ import {
   syncAppointmentNotifications,
 } from './notificationService.js'
 
-function rpcAusente(error) {
+const AVISO_SQL_040 = 'Rode o SQL 040 no Supabase para o financeiro gravar a cobrança.'
+
+export function rpcAusente(error) {
   const message = error?.message || ''
   return /schema cache|could not find the function|PGRST202|404/i.test(message)
 }
@@ -25,7 +27,8 @@ async function sincronizarConclusao(supabase, appointmentId) {
   const { error } = await supabase.rpc('sincronizar_conclusao_atendimento', {
     p_appointment_id: appointmentId,
   })
-  if (!error || rpcAusente(error)) return { ok: true }
+  if (!error) return { ok: true }
+  if (rpcAusente(error)) return { ok: true, avisoFinanceiro: AVISO_SQL_040 }
   return { ok: false, error: error.message }
 }
 
@@ -33,8 +36,30 @@ async function reverterConclusao(supabase, appointmentId) {
   const { error } = await supabase.rpc('reverter_conclusao_atendimento', {
     p_appointment_id: appointmentId,
   })
-  if (!error || rpcAusente(error)) return { ok: true }
+  if (!error) return { ok: true }
+  if (rpcAusente(error)) return { ok: true, avisoFinanceiro: AVISO_SQL_040 }
   return { ok: false, error: error.message }
+}
+
+async function consumirCupomRpc(supabase, couponId) {
+  const { data, error } = await supabase.rpc('consumir_cupom', { p_coupon_id: couponId })
+  if (!error) {
+    if (data?.ok === false) return { ok: false, error: data.error || 'Cupom esgotado ou inválido.' }
+    return { ok: true }
+  }
+  if (rpcAusente(error)) return { ok: false, ausente: true }
+  return { ok: false, error: error.message }
+}
+
+async function consumirCupomLegado(supabase, couponId) {
+  const { data: cup, error: selErr } = await supabase.from('coupons').select('uses_count, max_uses').eq('id', couponId).single()
+  if (selErr) return { ok: false, error: selErr.message }
+  const used = Number(cup?.uses_count) || 0
+  const max = cup?.max_uses == null ? null : Number(cup.max_uses)
+  if (max != null && used >= max) return { ok: false, error: 'Cupom esgotado ou inválido.' }
+  const { error: updErr } = await supabase.from('coupons').update({ uses_count: used + 1 }).eq('id', couponId)
+  if (updErr) return { ok: false, error: updErr.message }
+  return { ok: true, avisoCupom: 'Rode o SQL 043 no Supabase (cupom atômico).' }
 }
 
 async function syncQuiet(supabase, appointment, options) {
@@ -99,6 +124,17 @@ export async function criarAgendamento(supabase, {
     .maybeSingle()
   const depositAmount = computeDeposit(agreedPrice, perfilSinal?.deposit_mode, perfilSinal?.deposit_value)
 
+  let avisoCupom
+  let cupomViaRpc = false
+  if (couponId) {
+    const cupom = await consumirCupomRpc(supabase, couponId)
+    if (cupom.ok) {
+      cupomViaRpc = true
+    } else if (!cupom.ausente) {
+      return { ok: false, error: cupom.error || 'Cupom esgotado ou inválido.' }
+    }
+  }
+
   const payload = {
     client_id: clientId,
     service_id: serviceId,
@@ -123,9 +159,13 @@ export async function criarAgendamento(supabase, {
 
   if (error) return { ok: false, error: error.message }
 
-  if (couponId) {
-    const { data: cup } = await supabase.from('coupons').select('uses_count').eq('id', couponId).single()
-    await supabase.from('coupons').update({ uses_count: (cup?.uses_count || 0) + 1 }).eq('id', couponId)
+  if (couponId && !cupomViaRpc) {
+    const cupom = await consumirCupomLegado(supabase, couponId)
+    if (!cupom.ok) {
+      avisoCupom = cupom.error || 'Não foi possível registrar o uso do cupom.'
+    } else if (cupom.avisoCupom) {
+      avisoCupom = cupom.avisoCupom
+    }
   }
 
   if (data?.id) {
@@ -138,7 +178,7 @@ export async function criarAgendamento(supabase, {
       clients: { name: clientName || 'Cliente' },
     })
   }
-  return { ok: true, id: data?.id }
+  return { ok: true, id: data?.id, avisoCupom }
 }
 
 export async function marcarSinalPago(supabase, agendamento, amount) {
@@ -191,17 +231,15 @@ export async function recusarPedido(supabase, agendamento, motivo, origin) {
 }
 
 export async function concluirAtendimento(supabase, { agendamento, metodo }) {
+  let packageUsed = null
+
   if (metodo === 'PACOTE') {
     if (!agendamento?.client_id) return { ok: false, error: 'Cliente não encontrada' }
     const { data: cli } = await supabase.from('clients').select('package_size, package_used').eq('id', agendamento.client_id).single()
     const size = Number(cli?.package_size) || 0
-    const used = Number(cli?.package_used) || 0
-    if (size < 1 || used >= size) {
+    packageUsed = Number(cli?.package_used) || 0
+    if (size < 1 || packageUsed >= size) {
       return { ok: false, error: 'Essa cliente não tem visita no pacote. Cadastre 4 ou 6 no perfil dela.' }
-    }
-    const { error: pkgErr } = await supabase.from('clients').update({ package_used: used + 1 }).eq('id', agendamento.client_id)
-    if (pkgErr) {
-      return { ok: false, error: pkgErr.message.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote).' : pkgErr.message }
     }
   }
 
@@ -214,8 +252,31 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
   const { error } = await supabase.from('appointments').update(patch).eq('id', agendamento.id)
   if (error) return { ok: false, error: error.message }
 
+  if (metodo === 'PACOTE' && agendamento.client_id) {
+    const { error: pkgErr } = await supabase.from('clients').update({ package_used: packageUsed + 1 }).eq('id', agendamento.client_id)
+    if (pkgErr) {
+      await supabase.from('appointments').update({
+        status: agendamento.status || 'AGENDADO',
+        payment_method: agendamento.payment_method || null,
+        ...(agendamento.deposit_status ? { deposit_status: agendamento.deposit_status } : {}),
+      }).eq('id', agendamento.id)
+      return { ok: false, error: pkgErr.message.includes('package_') ? 'Rode o SQL 028 no Supabase (pacote).' : pkgErr.message }
+    }
+  }
+
   const financeiro = await sincronizarConclusao(supabase, agendamento.id)
-  if (!financeiro.ok) return financeiro
+  if (!financeiro.ok) {
+    await supabase.from('appointments').update({
+      status: agendamento.status || 'AGENDADO',
+      payment_method: agendamento.payment_method || null,
+      ...(agendamento.deposit_status ? { deposit_status: agendamento.deposit_status } : {}),
+    }).eq('id', agendamento.id)
+    if (metodo === 'PACOTE' && agendamento.client_id && packageUsed != null) {
+      await supabase.from('clients').update({ package_used: packageUsed }).eq('id', agendamento.client_id)
+    }
+    return financeiro
+  }
+
   await sanarCobrancaDaConclusao(supabase, agendamento, metodo)
   if (agendamento.user_id) invalidarFinanceiro(agendamento.user_id)
 
@@ -231,10 +292,10 @@ export async function concluirAtendimento(supabase, { agendamento, metodo }) {
     if (Object.keys(extra).length) {
       await supabase.from('clients').update(extra).eq('id', agendamento.client_id)
     }
-    return { ok: true, avisoMensalidade: true }
+    return { ok: true, avisoMensalidade: true, avisoFinanceiro: financeiro.avisoFinanceiro }
   }
 
-  return { ok: true }
+  return { ok: true, avisoFinanceiro: financeiro.avisoFinanceiro }
 }
 
 export async function reabrirAtendimento(supabase, agendamento) {
@@ -273,7 +334,7 @@ export async function reabrirAtendimento(supabase, agendamento) {
 
   await syncQuiet(supabase, { ...agendamento, status: 'AGENDADO', payment_method: null })
   if (agendamento.user_id) invalidarFinanceiro(agendamento.user_id)
-  return { ok: true }
+  return { ok: true, avisoFinanceiro: financeiro.avisoFinanceiro }
 }
 
 export async function remarcar(supabase, { agendamento, workspaceId, startTime, staffId, origin }) {

@@ -14,7 +14,7 @@ Página única `src/pages/Onboarding.jsx`, fora do `AppLayout`. `AppLayout` redi
 
 ## D. Fluxo
 
-Quatro passos locais, sem gravar a cada Continuar. **Começar a usar** atualiza `profiles` (`business_name`, `whatsapp`, `booking_active: true`, `onboarding_done: true`), recria `business_hours` dos sete dias (domingo fechado) e insere um serviço se a contagem for zero. Duração desse serviço: 60. Preço: o número digitado ou 50. Nome sugerido: Pé e mão.
+Quatro passos locais, sem gravar a cada Continuar. **Começar a usar** grava nome e WhatsApp no perfil, recria `business_hours` dos sete dias (domingo fechado), insere um serviço se a contagem for zero e **só então** marca `booking_active` e `onboarding_done`. Duração desse serviço: 60. Preço: o número digitado ou 50. Nome sugerido: Pé e mão.
 
 ## E. Banco
 
@@ -34,7 +34,7 @@ Só a dona autenticada. O update filtra `id = user.id`. A trigger de workspace n
 
 ## I. Erros
 
-Falha de update não tem tratamento além do que o Supabase devolver. O código não checa `error` de cada `update` e `insert` em sequência. Se o expediente falhar, `onboarding_done` pode já ter sido gravado. Ver [Problemas conhecidos](../11-problemas-conhecidos.md).
+Cada write confere `error` e interrompe com toast. `onboarding_done` / `booking_active` só depois de expediente (e serviço, se necessário) ok.
 
 ## J. Testes
 

@@ -5,8 +5,7 @@ import { ChevronLeft, ChevronRight, Calendar, Plus, CheckSquare, Square, Message
 import { Link } from 'react-router-dom'
 import Modal from '../components/Modal'
 import toast from 'react-hot-toast'
-import { driver } from "driver.js";
-import "driver.js/dist/driver.css";
+import { startTour } from '../utils/tour'
 import { getWeekDays, fetchWeekAppointments } from '../utils/scheduling'
 import { openSupportWhatsApp } from '../config/app'
 import { openWhatsApp } from '../utils/whatsapp'
@@ -149,28 +148,20 @@ export default function Agenda() {
   }
 
   const iniciarTutorialGeral = () => {
-    const driverObj = driver({
-      showProgress: true, nextBtnText: 'Próximo', prevBtnText: 'Anterior', doneBtnText: 'Entendi!',
-      steps: [
-        { element: '#nav-clientes', popover: { title: 'Menu', description: 'Clientes, serviços e o resto do sistema ficam na barra lateral (ou no menu no celular).' } },
-        { element: '#nav-financeiro', popover: { title: 'Financeiro', description: 'Acompanhe entradas, saídas e o lucro.' } },
-        { element: '#nav-datas', popover: { title: 'Navegação', description: 'Mude os dias para ver a agenda.' } },
-        { element: '#btn-novo', popover: { title: 'Agendar', description: 'Clique no + para marcar um horário.' } }
-      ]
-    });
-    driverObj.drive();
+    startTour([
+      { element: '#nav-clientes', popover: { title: 'Menu', description: 'Clientes, serviços e o resto do sistema ficam na barra lateral (ou no menu no celular).' } },
+      { element: '#nav-financeiro', popover: { title: 'Financeiro', description: 'Acompanhe entradas, saídas e o lucro.' } },
+      { element: '#nav-datas', popover: { title: 'Navegação', description: 'Mude os dias para ver a agenda.' } },
+      { element: '#btn-novo', popover: { title: 'Agendar', description: 'Clique no + para marcar um horário.' } },
+    ])
   }
 
   const iniciarTutorialCard = (agendamento) => {
-    const driverObj = driver({
-      showProgress: true, nextBtnText: 'Próximo', prevBtnText: 'Voltar', doneBtnText: 'Entendi!',
-      steps: [
-        { element: `#check-${agendamento.id}`, popover: { title: 'Concluir', description: 'Clique aqui para finalizar e lançar no caixa.' } },
-        { element: `#zap-${agendamento.id}`, popover: { title: 'WhatsApp', description: 'Envie confirmação automática.' } },
-        { element: `#card-content-${agendamento.id}`, popover: { title: 'Detalhes', description: 'Toque no nome para editar ou excluir.' } }
-      ]
-    });
-    driverObj.drive();
+    startTour([
+      { element: `#check-${agendamento.id}`, popover: { title: 'Concluir', description: 'Clique aqui para finalizar e lançar no caixa.' } },
+      { element: `#zap-${agendamento.id}`, popover: { title: 'WhatsApp', description: 'Envie confirmação automática.' } },
+      { element: `#card-content-${agendamento.id}`, popover: { title: 'Detalhes', description: 'Toque no nome para editar ou excluir.' } },
+    ], { prevBtnText: 'Voltar' })
   }
 
   async function buscarAgendamentos() {
@@ -206,6 +197,7 @@ export default function Agenda() {
     } else {
       toast.success('Recebido!', { icon: '💰' })
     }
+    if (result.avisoFinanceiro) toast(result.avisoFinanceiro, { icon: '⚠️' })
     setAgendamentos(prev => prev.map(item => item.id === apt.id ? { ...item, status: 'CONCLUIDO', payment_method: metodo } : item))
     setPagamentoModalOpen(false)
     setIdParaConcluir(null)
@@ -218,6 +210,7 @@ export default function Agenda() {
     if (!result.ok) return toast.error(result.error)
     setAgendamentos(prev => prev.map(item => item.id === agendamento.id ? { ...item, status: 'AGENDADO', payment_method: null } : item))
     toast('Reaberto', { icon: '↩️' })
+    if (result.avisoFinanceiro) toast(result.avisoFinanceiro, { icon: '⚠️' })
   }
 
   const abrirOpcoes = (agendamento) => {

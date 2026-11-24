@@ -12,8 +12,7 @@ import { workspaceId } from '../utils/workspace'
 import { Link } from 'react-router-dom'
 import WhatsAppStatus from '../components/WhatsAppStatus'
 import toast from 'react-hot-toast'
-import { driver } from "driver.js";
-import "driver.js/dist/driver.css";
+import { startTour } from '../utils/tour'
 
 export default function Configuracoes() {
   const { profile, refreshProfile } = useSessionProfile()
@@ -54,16 +53,12 @@ export default function Configuracoes() {
   useEffect(() => { carregarDados() }, [])
 
   const iniciarTutorial = () => {
-    const driverObj = driver({
-      showProgress: true, nextBtnText: 'Próximo', prevBtnText: 'Anterior', doneBtnText: 'Entendi!',
-      steps: [
-        { element: '#card-perfil', popover: { title: 'Seus Dados', description: 'Defina o nome do negócio e o WhatsApp.' } },
-        { element: '#card-link', popover: { title: 'Link & Bloqueio', description: 'Copie seu link ou feche a agenda.' } },
-        { element: '#card-horarios', popover: { title: 'Horários', description: 'Configure sua disponibilidade.' } },
-        { element: '#btn-salvar-geral', popover: { title: 'Salvar', description: 'Clique aqui para gravar as alterações.' } }
-      ]
-    });
-    driverObj.drive();
+    startTour([
+      { element: '#card-perfil', popover: { title: 'Seus Dados', description: 'Defina o nome do negócio e o WhatsApp.' } },
+      { element: '#card-link', popover: { title: 'Link & Bloqueio', description: 'Copie seu link ou feche a agenda.' } },
+      { element: '#card-horarios', popover: { title: 'Horários', description: 'Configure sua disponibilidade.' } },
+      { element: '#btn-salvar-geral', popover: { title: 'Salvar', description: 'Clique aqui para gravar as alterações.' } },
+    ])
   }
 
   async function carregarDados() {
@@ -309,6 +304,25 @@ export default function Configuracoes() {
     toast.success('CSV baixado')
   }
 
+  async function pedirExclusaoConta() {
+    if (!authUserId) return toast.error('Sessão expirada')
+    if (profile?.deletion_requested_at) {
+      return toast('Pedido de exclusão já registrado. A equipe entra em contato.', { icon: 'ℹ️' })
+    }
+    const ok = window.confirm('Registrar pedido para apagar sua conta e os dados do salão? Isso não apaga agora — só marca o pedido para a equipe.')
+    if (!ok) return
+    const { error } = await supabase.from('profiles').update({
+      deletion_requested_at: new Date().toISOString(),
+    }).eq('id', authUserId)
+    if (error) {
+      return toast.error(error.message?.includes('deletion_requested')
+        ? 'Rode o SQL 043 no Supabase (pedido LGPD).'
+        : error.message)
+    }
+    await refreshProfile()
+    toast.success('Pedido registrado. A exclusão não é automática.')
+  }
+
   if (loading) return <div style={{padding:'20px'}}>Carregando...</div>
 
   const pushCaps = getPushCapabilities()
@@ -539,8 +553,19 @@ export default function Configuracoes() {
         {/* CARD HORÁRIOS RESPONSIVO */}
         <div style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd', marginBottom: '20px' }}>
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Download size={20} /> Seus dados (LGPD)</h3>
-          <p style={{ color: '#64748b', fontSize: '13px' }}>Baixe a lista de clientes (nome, WhatsApp, tipo e fidelidade) para backup ou pedido da cliente.</p>
-          <button type="button" onClick={exportarClientes} style={{ padding: '12px 16px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Baixar CSV das clientes</button>
+          <p style={{ color: '#64748b', fontSize: '13px' }}>
+            O CSV é só a lista de clientes (nome, WhatsApp, tipo e fidelidade) — não é o dump completo do salão (agenda, financeiro, fotos).
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+            <button type="button" onClick={exportarClientes} style={{ padding: '12px 16px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Baixar CSV das clientes</button>
+            <button
+              type="button"
+              onClick={pedirExclusaoConta}
+              style={{ padding: '12px 16px', background: 'white', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              {profile?.deletion_requested_at ? 'Exclusão já pedida' : 'Pedir exclusão da conta'}
+            </button>
+          </div>
         </div>
 
         <div id="card-horarios" style={{ background: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #ddd' }}>

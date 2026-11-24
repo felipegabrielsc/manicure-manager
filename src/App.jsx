@@ -36,7 +36,7 @@ function PageFallback() {
   return <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Carregando...</div>
 }
 
-const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, salon_owner_id, onboarding_done, last_seen_at, business_name, subscription_plans(name, price, features)'
+const PROFILE_SELECT = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, salon_owner_id, onboarding_done, last_seen_at, business_name, deletion_requested_at, subscription_plans(name, price, features)'
 const PROFILE_SELECT_FALLBACK = 'is_blocked, is_admin, plan_id, subscription_status, subscription_expires_at, trial_ends_at, subscription_plans(name, price, features)'
 
 export default function App() {

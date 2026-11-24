@@ -1,5 +1,7 @@
 # Plano de ação — Manicure Manager
 
+> **Histórico.** Este arquivo não é especificação do sistema atual. Use `docs/05-regras-de-negocio.md` e o código. Mantido só para contexto de decisões antigas.
+
 Etapas 1 a 9 estão no código. Cole as migrations `029` a `035` no SQL Editor antes do deploy. A `035` faz o lembrete que já passou nascer cancelado, para não sair junto com a confirmação. A `033` é obrigatória se a `032` já foi aplicada: sem ela, marcar horário responde 404 porque `enqueue_notification` foi criada com `client_id` uuid e o banco usa bigint. A `034` liga o atendimento automático (desligado por padrão) e o rastro da fila. O envio de WhatsApp fica desligado até existirem `WA_AKG_URL`, `WA_AKG_API_KEY` e `WHATSAPP_WEBHOOK_SECRET` nos secrets da Edge Function. `WHATSAPP_WEBHOOK_SECRET` tem de ser diferente de `CRON_SECRET` e de `MP_ACCESS_TOKEN`.
 
 Objetivo: o salão continua funcionando se o WhatsApp cair, e o WhatsApp passa a confirmar, lembrar, avisar cancelamento e pedir retorno sem depender do navegador aberto.

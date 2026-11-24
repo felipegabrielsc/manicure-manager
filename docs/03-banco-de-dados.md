@@ -198,7 +198,7 @@ O arquivo avisa para rodar depois de backup. `EXPLAIN` em produção não foi ex
 ## Como criar uma migration nova
 
 1. Não edite um arquivo já aplicado em produção. O README e o histórico deste projeto tratam SQL aplicado como imutável.
-2. Crie `supabase/migrations/042_descricao_curta.sql` com o próximo número livre. Não reutilize `029`.
+2. Crie `supabase/migrations/044_descricao_curta.sql` (ou o próximo depois do maior número em `supabase/migrations/`). Não reutilize `029`. A `043_audit_isolamento_e_cupom.sql` já existe.
 3. Use `IF NOT EXISTS` e `CREATE OR REPLACE` só quando a mudança for compatível com quem já rodou o arquivo anterior.
 4. Se a política ou a função mudar, derrube a versão antiga pelo nome exato. Políticas com aspas e sem aspas são nomes diferentes.
 5. Aplique primeiro num projeto Supabase de teste. Backup antes do projeto real.

@@ -13,7 +13,7 @@ Datas de caixa e competência usam o dia civil em `America/Sao_Paulo` (`civilDat
 3. Condições: cliente, serviço e hora preenchidos. `validateBookingSlot` aceita o intervalo.
 4. Dados: `appointments` (`status = AGENDADO`, `agreed_price`, `user_id` do workspace, profissional, unidade, cupom, desconto). Sinal em `deposit_amount` se `computeDeposit` for maior que zero.
 5. Arquivos: `src/application/appointmentService.js` (`criarAgendamento`), `src/pages/NovoAgendamento.jsx`, `src/utils/scheduling.js`.
-6. Comportamento: valida no browser, chama `validar_horario_agendamento` e, se a RPC recusar, não grava. Se a RPC falhar por assinatura antiga, tenta de novo sem `p_staff_id`. Se a coluna de sinal não existir, grava sem ela. Incrementa `coupons.uses_count` no cliente, sem transação única com o insert. Enfileira notificação se a `030` existir.
+6. Comportamento: valida no browser, chama `validar_horario_agendamento` e, se a RPC recusar, não grava. Se a RPC falhar por assinatura antiga, tenta de novo sem `p_staff_id`. Se a coluna de sinal não existir, grava sem ela. Com cupom, chama `consumir_cupom` (043) **antes** do insert; se a RPC faltar, incrementa `uses_count` depois do insert com aviso. Enfileira notificação se a `030` existir.
 7. Exceções: mensalista mostra preço isento na tela. O preço gravado segue o que a página mandou.
 8. Dependências: expediente, bloqueios, serviços, clientes, notificações.
 9. Testes: `src/utils/scheduling.test.js`, `src/application/appointmentService.test.js`.
